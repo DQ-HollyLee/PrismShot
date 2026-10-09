@@ -10,7 +10,7 @@
 
 1. **存在感必须极低**：默认无托盘图标、无任务栏按钮、无主窗口。唯一常驻的是一根监听两个热键的低级键盘钩子线程和一个命名管道服务端。
 2. **开机即用**：安装时写 HKCU 自启，之后用户永远不需要打开它的界面。
-3. **只截图**：不录屏、不做 OCR、不做编辑器、不做贴图批注。需要 OCR 时由 StarPie 插件接过 here 产出的图片。
+3. **只截图**：不录屏、不做 OCR、不做编辑器、不做贴图批注。需要 OCR 时由 StarPie 插件接过它产出的图片。
 4. **默认输出 JPG**：为了直接喂给 StarPie 的 AI OCR 接口，SDR 的 8bit JPG 就是它们吃得最稳的格式。
 5. **HDR 路径绕开 GDI**：任何 `BitBlt` / `CopyFromScreen` / `Graphics.CopyFromScreen` 都拿的是 DWM 为兼容 GDI 而降级过的 8bit SDR 副本。本项目主路径走 WGC（Windows Graphics Capture）取 `R16G16B16A16Float` scRGB。
 6. **必须有兜底**：WGC 失败（远程桌面、锁屏、部分虚拟显卡、驱动异常）时自动降级到 GDI，功能不残废，只是这一张没有 HDR。
@@ -34,17 +34,32 @@ hdrshot-screenshot/
 │       │   ├── Capture/      # WGC 抓帧、监视器 HDR 探测、GDI 兜底
 │       │   ├── Imaging/      # 色调映射、格式编码、色域转换
 │       │   ├── Interop/      # P/Invoke 与 COM 互操作
-│       │   └── System/       # 热键、自启、单实例、IPC、录制宏、配置
-│       └── UI/               # 覆盖层、工具栏、缩略图提示
+│       │   ├── Ipc/          # 命名管道协议 / 服务端 / 客户端 / 单实例
+│       │   ├── Platform/     # DPI 感知、录制宏
+│       │   └── System/       # 热键、自启、剪贴板、模拟按键
+│       └── Ui/               # 覆盖层、工具栏、缩略图提示
 ├── plugin/
 │   └── StarPie.Plugin.PrismShot/   # 给 StarPie 轮盘用的插件
+│       ├── plugin.json             # 宿主清单（必须与 DLL 一起分发）
+│       ├── README.md               # 安装与参数
+│       └── upstream/               # 给 StarPie 上游的提案（OCR 接缝）
 ├── docs/                     # 设计说明、排障手册
 ├── reference/                # 参考仓库克隆（被 .gitignore 忽略，不入版本库）
 │   ├── Starshot/
 │   └── StarPie/
 └── .cache/                   # 中间产物（被 .gitignore 忽略）
-    └── dotnet/               # 构建脚本自己下载的隔离 .NET SDK
+    └── plugincheck/          # 离线宿主桩：不装 StarPie 也能验插件契约
 ```
+
+## 验证手段
+
+- `PrismShot.exe --probe`：打印每块屏的尺寸 / HDR / SDR 白电平，并写一份报告
+- `PrismShot.exe --capture`：单次抓虚拟桌面，报告里带 `pipeline` —— **只看图是不够的，
+  必须确认这一行是 `WGC` 而不是 `GDI 兜底`**
+- `.cache/plugincheck`：复刻宿主的安装闸门（清单字段 / 入口类型 / 契约引用 / TFM）
+  与运行时契约（五个动作的注册、参数校验、Preview、ESC 取消、停用后留有什么），
+  还能在 PrismShot 常驻实例在线时跑通真实截图链路。不需要装 StarPie
+- `.\build.ps1`：编译 + publish + 排发行包到 `artifacts\PrismShot-<version>\`
 
 ## 版本管理纪律
 
@@ -76,10 +91,16 @@ hdrshot-screenshot/
 ## 待办
 
 - [x] 项目骨架、版本管理、技术选型
-- [ ] 抓帧引擎（WGC float + GDI 兜底）
-- [ ] 色调映射 + 多格式编码
-- [ ] 覆盖层 UI（四种选区模式）
-- [ ] 热键接管 + 自启
-- [ ] 单实例 IPC + CLI + StarPie 插件
-- [ ] 录制宏
-- [ ] 实机验证（SDR 环境 + HDR 环境）
+- [x] 抓帧引擎（WGC float + GDI 兜底）
+- [x] 色调映射 + 多格式编码
+- [x] 覆盖层 UI（四种选区模式）
+- [x] 热键接管 + 自启
+- [x] 单实例 IPC + CLI + StarPie 插件
+- [x] 录制宏
+- [x] 构建脚本 `build.ps1`（publish + 排发行包）
+- [x] 面向使用者的文档（README / 插件 README / OCR 上游提案）
+- [x] 实机验证：SDR 环境（本机 2560×1440 @125%、SDR 白电平 360 尼特，`pipeline=WGC`）
+- [ ] **实机验证：真正的 HDR 环境**。本机 `--probe` 报 `hdr enabled = False`，
+      而 360 尼特的白电平已经能验证「按每屏白电平回缩放」这条算术，
+      却验证不了「浮点帧里出现 > 1.0 的值时也不过曝」这条。需要在真 HDR 屏上补一次。
+- [ ] 在真实 StarPie 1.8.0 主程序里加载插件（当前只有离线宿主桩的验证）

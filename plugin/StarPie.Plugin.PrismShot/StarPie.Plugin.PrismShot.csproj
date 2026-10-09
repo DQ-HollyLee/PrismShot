@@ -1,0 +1,54 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <LangVersion>12.0</LangVersion>
+
+    <AssemblyName>StarPie.Plugin.PrismShot</AssemblyName>
+    <RootNamespace>StarPie.Plugin.PrismShot</RootNamespace>
+
+    <Version>1.0.0</Version>
+    <AssemblyVersion>1.0.0.0</AssemblyVersion>
+    <FileVersion>1.0.0.0</FileVersion>
+
+    <Platforms>x64</Platforms>
+    <PlatformTarget>x64</PlatformTarget>
+
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
+
+    <!--
+      插件的 SDK 位置由 StarPiePluginSdkDir 指定，默认取同级 reference 下克隆的 StarPie 仓库。
+      放在属性里而不是写死路径，是因为不同人克隆的位置不一样；构建脚本会显式传进来。
+      构造失败时的报错信息写在下面那个 Target 里，免得只留一句「找不到文件」。
+    -->
+    <StarPiePluginSdkDir Condition="'$(StarPiePluginSdkDir)' == ''">$(MSBuildThisFileDirectory)..\..\reference\StarPie\plugin\sdk\StarPie.Plugin.Abstractions</StarPiePluginSdkDir>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!--
+      <Private>false</Private> 是硬性要求：产物里多出一份 StarPie.Plugin.Abstractions.dll，
+      宿主加载时会因为类型来自两个不同程序集而报「无法转换为 IStarPiePlugin」。
+      这不是能靠删文件绕过去的问题，必须在引用上关掉复制。
+    -->
+    <ProjectReference Include="$(StarPiePluginSdkDir)\StarPie.Plugin.Abstractions.csproj">
+      <Private>false</Private>
+    </ProjectReference>
+  </ItemGroup>
+
+  <!-- 裸 DLL 分发时的静态识别兜底。值必须与 plugin.json 保持一致。 -->
+  <ItemGroup>
+    <AssemblyMetadata Include="StarPiePluginId" Value="dev.prismshot.starpie" />
+    <AssemblyMetadata Include="StarPiePluginName" Value="PrismShot HDR 截图" />
+    <AssemblyMetadata Include="StarPiePluginCapabilities" Value="Process;FileSystem;Clipboard;ScreenCapture" />
+    <AssemblyMetadata Include="StarPiePluginLicense" Value="MIT" />
+    <AssemblyMetadata Include="StarPiePluginHomepage" Value="https://github.com/prismshot/PrismShot" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Update="plugin.json" CopyToOutputDirectory="PreserveNewest" />
+    <None Update="README.md" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+</Project>
