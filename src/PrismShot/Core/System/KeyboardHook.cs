@@ -94,7 +94,7 @@ internal sealed class KeyboardHook : IDisposable
     {
         try
         {
-            _threadId = Kernel32.GetCurrentThreadId();
+            _threadId = Win32.GetCurrentThreadId();
             IntPtr module = Win32.GetModuleHandle(null);
             _hook = Win32.SetWindowsHookEx(
                 Win32.WindowsHookKeyboardLowLevel,
@@ -135,7 +135,7 @@ internal sealed class KeyboardHook : IDisposable
 
             if (_threadId != 0)
             {
-                Kernel32.PostThreadMessage(_threadId, Kernel32.WmQuit, IntPtr.Zero, IntPtr.Zero);
+                Win32.PostThreadMessage(_threadId, Win32.WindowsMessageQuit, IntPtr.Zero, IntPtr.Zero);
             }
         }
     }
@@ -241,7 +241,7 @@ internal sealed class KeyboardHook : IDisposable
         _disposed = true;
         if (_threadId != 0)
         {
-            Kernel32.PostThreadMessage(_threadId, Kernel32.WmQuit, IntPtr.Zero, IntPtr.Zero);
+            Win32.PostThreadMessage(_threadId, Win32.WindowsMessageQuit, IntPtr.Zero, IntPtr.Zero);
         }
 
         _thread?.Join(TimeSpan.FromSeconds(2));
@@ -249,43 +249,4 @@ internal sealed class KeyboardHook : IDisposable
         _ready.Dispose();
         Log.Info("键盘钩子已卸载。");
     }
-}
-
-internal static class Kernel32
-{
-    public const uint WmQuit = 0x0012;
-
-    [StructLayout(LayoutKind.Sequential)]
-    public struct POINT
-    {
-        public int X;
-        public int Y;
-    }
-
-    [StructLayout(LayoutKind.Sequential)]
-    public struct MSG
-    {
-        public IntPtr hwnd;
-        public uint message;
-        public IntPtr wParam;
-        public IntPtr lParam;
-        public uint time;
-        public POINT pt;
-        public uint lPrivate;
-    }
-
-    [DllImport("kernel32.dll")]
-    public static extern uint GetCurrentThreadId();
-
-    [DllImport("kernel32.dll", CharSet = CharSet.Unicode)]
-    public static extern int GetMessage(out MSG message, IntPtr window, uint min, uint max);
-
-    [DllImport("kernel32.dll")]
-    public static extern bool TranslateMessage(ref MSG message);
-
-    [DllImport("kernel32.dll")]
-    public static extern IntPtr DispatchMessage(ref MSG message);
-
-    [DllImport("kernel32.dll")]
-    public static extern bool PostThreadMessage(uint threadId, uint message, IntPtr wParam, IntPtr lParam);
 }

@@ -1,4 +1,6 @@
 using System;
+using System.Collections.Generic;
+using PrismShot.Core.Interop;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
 
@@ -95,5 +97,93 @@ internal sealed class Raster
                 Pixels[offset + (column * 4)] = 255;
             }
         }
+    }
+
+    /// <summary>
+    /// 把多边形外的像素 alpha 清零 —— 圈选的输出应该是透明底的。
+    /// </summary>
+    /// <param name="polygon">虚拟坐标下的闭合多边形顶点。</param>
+    /// <param name="originX">本张图左上角在虚拟桌面里的 X。</param>
+    /// <param name="originY">同理，Y。</param>
+    /// <remarks>
+    /// 逐行做扫描线比「逐点调用 IsInside」快得多：一行只用求几次交点，而不是宽乘高次。
+    /// 代价是这里多写三十行，但圈选区域动辄上百万像素，值得。
+    /// </remarks>
+    public void ApplyPolygonAlpha(IReadOnlyList<Point32> polygon, int originX, int originY)
+    {
+        if (polygon is null || polygon.Count < 3)
+        {
+            return;
+        }
+
+        for (int row = 0; row < Height; row++)
+        {
+            int worldY = originY + row;
+            List<double> crossings = new(polygon.Count);
+
+            for (int index = 0; index < polygon.Count; index++)
+            {
+                Point32 current = polygon[index];
+                Point32 next = polygon[(index + 1) % polygon.Count];
+
+                bool currentBelow = current.Y <= worldY;
+                bool nextBelow = next.Y <= worldY;
+                if (currentBelow == nextBelow)
+                {
+                    continue;
+                }
+
+                // 半开区间约定：只在「向上穿过」这条边上记一次交点，
+                // 免得顶点正好落在扫描线上时被数两次，导致内部判定翻转。
+                if (next.Y == current.Y)
+                {
+                    continue;
+                }
+
+                double ratio = (double)(worldY - current.Y) / (next.Y - current.Y);
+                crossings.Add(current.X + (ratio * (next.X - current.X)));
+            }
+
+            if (crossings.Count == 0)
+            {
+                // 整行都在多边形外。
+                ClearAlphaRow(row);
+                continue;
+            }
+
+            crossings.Sort();
+            int rowOffset = row * Stride;
+            for (int column = 0; column < Width; column++)
+            {
+                int pixelOffset = rowOffset + (column * 4);
+                Pixels[pixelOffset + 3] = IsInsideOdd(crossings, originX + column)
+                    ? Pixels[pixelOffset + 3]
+                    : (byte)0;
+            }
+        }
+    }
+
+    private void ClearAlphaRow(int row)
+    {
+        int offset = row * Stride + 3;
+        for (int column = 0; column < Width; column++)
+        {
+            Pixels[offset + (column * 4)] = 0;
+        }
+    }
+
+    private static bool IsInsideOdd(List<double> crossings, double worldX)
+    {
+        int count = 0;
+        foreach (double x in crossings)
+        {
+            if (x > worldX)
+            {
+                count++;
+            }
+        }
+
+        // 奇数个交点在右侧 = 内部。这里用严格大于，免得顶点处左右都算，退化成同样的奇偶错乱。
+        return (count & 1) == 1;
     }
 }

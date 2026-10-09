@@ -102,6 +102,7 @@ internal static partial class Win32
     public const int WindowsMessageKeyUp = 0x0101;
     public const int WindowsMessageSystemKeyDown = 0x0104;
     public const int WindowsMessageSystemKeyUp = 0x0105;
+    public const int WindowsMessageQuit = 0x0012;
 
     // ---- SetWindowPos ----
     public static readonly IntPtr WindowHandleTopMost = new(-1);
@@ -262,6 +263,9 @@ internal static partial class Win32
 
     [DllImport("user32.dll")]
     public static extern IntPtr GetMessageExtraInfo();
+
+    [DllImport("kernel32.dll")]
+    public static extern uint GetCurrentThreadId();
 
     /// <summary>取虚拟桌面的物理像素范围。四块显示器拼起来那张「大桌面」。</summary>
     public static Rect32 GetVirtualScreen()

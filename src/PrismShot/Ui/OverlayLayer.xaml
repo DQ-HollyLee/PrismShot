@@ -1,0 +1,166 @@
+<Window
+    x:Class="PrismShot.Ui.OverlayLayer"
+    x:ClassModifier="internal"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    Title="PrismShot"
+    AllowsTransparency="True"
+    Background="Transparent"
+    Cursor="Crosshair"
+    Focusable="False"
+    ResizeMode="NoResize"
+    ShowActivated="False"
+    ShowInTaskbar="False"
+    SnapsToDevicePixels="True"
+    Topmost="True"
+    UseLayoutRounding="True"
+    WindowStyle="None">
+
+    <Window.Resources>
+        <!--
+            工具栏按钮。刻意把命中区做成整格 44x36：截图这件事通常是一串连贯动作，
+            按钮小一像素就多点歪一次，用户体验上的损失远超过视觉上的那点粗糙。
+        -->
+        <Style x:Key="ToolButton" TargetType="Button">
+            <Setter Property="Foreground" Value="#FFF3F3F3" />
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="FontSize" Value="12" />
+            <Setter Property="Padding" Value="10,0" />
+            <Setter Property="MinWidth" Value="44" />
+            <Setter Property="Height" Value="36" />
+            <Setter Property="Cursor" Value="Arrow" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border Background="{TemplateBinding Background}" CornerRadius="4">
+                            <ContentPresenter
+                                Margin="{TemplateBinding Padding}"
+                                HorizontalAlignment="Center"
+                                VerticalAlignment="Center" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter Property="Background" Value="#33FFFFFF" />
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter Property="Background" Value="#55FFFFFF" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style x:Key="AccentToolButton" BasedOn="{StaticResource ToolButton}" TargetType="Button">
+            <Setter Property="Foreground" Value="#FF4CC2FF" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+        </Style>
+    </Window.Resources>
+
+    <Grid x:Name="Root">
+        <Grid.LayoutTransform>
+            <!--
+                虚拟桌面坐标是物理像素，WPF 布局是 DIP（1/96 英寸）。
+                这里把整棵子树的关系倒过来：子树内部一律按物理像素写，
+                由这一层统一缩到 DIP —— 省得在每个坐标计算处都乘除一遍当前缩放。
+            -->
+            <ScaleTransform x:Name="RootScale" ScaleX="1" ScaleY="1" />
+        </Grid.LayoutTransform>
+
+        <Canvas x:Name="Surface" Width="0" Height="0">
+            <Image
+                x:Name="FrameImage"
+                RenderOptions.BitmapScalingMode="NearestNeighbor"
+                Stretch="None" />
+
+            <Path x:Name="DimMask" Fill="#71000000" />
+            <Path
+                x:Name="Outline"
+                Fill="Transparent"
+                SnapsToDevicePixels="True"
+                Stroke="#FF0A84FF"
+                StrokeThickness="2" />
+
+            <Border
+                x:Name="Magnifier"
+                Width="180"
+                Height="120"
+                BorderBrush="#99000000"
+                BorderThickness="1"
+                CornerRadius="2"
+                IsHitTestVisible="False"
+                Visibility="Collapsed">
+                <Rectangle x:Name="MagnifierFill" Stretch="Fill">
+                    <Rectangle.Stroke>
+                        <SolidColorBrush Color="#33000000" />
+                    </Rectangle.Stroke>
+                </Rectangle>
+            </Border>
+
+            <Border
+                x:Name="Readout"
+                Padding="8,4"
+                Background="#D91F1F1F"
+                CornerRadius="3"
+                IsHitTestVisible="False"
+                Visibility="Collapsed">
+                <TextBlock
+                    x:Name="ReadoutText"
+                    FontFamily="Consolas"
+                    FontSize="13"
+                    Foreground="#FFFFFFFF" />
+            </Border>
+
+            <Border
+                x:Name="Toolbar"
+                Padding="4"
+                Background="#EE202020"
+                BorderBrush="#33FFFFFF"
+                BorderThickness="1"
+                CornerRadius="8"
+                Visibility="Collapsed">
+                <StackPanel Orientation="Horizontal">
+                    <Button
+                        x:Name="RectButton"
+                        Click="OnRectClick"
+                        Content="矩形"
+                        Style="{StaticResource ToolButton}" />
+                    <Button
+                        x:Name="FreeformButton"
+                        Click="OnFreeformClick"
+                        Content="任意"
+                        Style="{StaticResource ToolButton}" />
+                    <Button
+                        x:Name="WindowButton"
+                        Click="OnWindowClick"
+                        Content="窗口"
+                        Style="{StaticResource ToolButton}" />
+                    <Button
+                        x:Name="FullButton"
+                        Click="OnFullClick"
+                        Content="全屏"
+                        Style="{StaticResource ToolButton}" />
+                    <Rectangle
+                        Width="1"
+                        Height="20"
+                        Margin="4,0"
+                        VerticalAlignment="Center"
+                        Fill="#44FFFFFF" />
+                    <Button
+                        x:Name="RecordButton"
+                        Click="OnRecordClick"
+                        Content="录制"
+                        Style="{StaticResource AccentToolButton}"
+                        ToolTip="向显卡驱动发送录屏组合键" />
+                    <Button
+                        x:Name="CloseButton"
+                        Click="OnCloseClick"
+                        Content="✕"
+                        Style="{StaticResource ToolButton}"
+                        ToolTip="取消截图 (Esc)" />
+                </StackPanel>
+            </Border>
+        </Canvas>
+    </Grid>
+</Window>
