@@ -40,6 +40,7 @@ internal sealed class KeyboardHook : IDisposable
     private volatile bool _disposed;
     private volatile bool _suspended;
     private volatile bool _swallowWindowsKeyUp;
+    private volatile bool _overlayKeys;
 
     public KeyboardHook()
     {
@@ -50,6 +51,18 @@ internal sealed class KeyboardHook : IDisposable
     /// 命中快捷键。回调在普通线程池线程上，不在钩子线程里，可以放心做重活。
     /// </summary>
     public event Action<HotkeyBinding>? Triggered;
+
+    /// <summary>
+    /// 覆盖层打开期间观察到的物理按键。<paramref name="virtualKey"/>
+    /// 配合 <see cref="HotkeyBinding.ReadCurrentModifiers"/> 之外的即时修饰键一起上报。
+    /// </summary>
+    /// <remarks>
+    /// 覆盖层刻意不去抢键盘焦点 —— 一抢，用户原本正在输入的那句话就断在后面的窗口里了。
+    /// 代价是 WPF 的 <c>KeyDown</c> 根本不会来，ESC 也就跟着失效。
+    /// 这里补齐缺口：由钩子在最先处把按键拦下来并上报，覆盖层照样能取消，
+    /// 而且不看哪块屏上有焦点，跨多显示器也一致。
+    /// </remarks>
+    public event Action<uint, HotkeyModifiers>? KeyObserved;
 
     public void Start()
     {
@@ -89,6 +102,12 @@ internal sealed class KeyboardHook : IDisposable
     /// 而且那时候我们自己的合成按键不能被自己的钩子吞掉。
     /// </summary>
     public void SetSuspended(bool suspended) => _suspended = suspended;
+
+    /// <summary>
+    /// 覆盖层独占键盘。处于这个状态时，所有物理按键都不再往下传，只上报到
+    /// <see cref="KeyObserved"/>。录屏宏等自己合成的那些按键不会被吞（注入标记已先行跳过）。
+    /// </summary>
+    public void SetOverlayKeys(bool enabled) => _overlayKeys = enabled;
 
     private void HookThread()
     {
@@ -182,6 +201,25 @@ internal sealed class KeyboardHook : IDisposable
             }
 
             return Win32.CallNextHookEx(IntPtr.Zero, code, wParam, lParam);
+        }
+
+        if (_overlayKeys)
+        {
+            uint virtualKey = data.VirtualKeyCode;
+            HotkeyModifiers modifiers = HotkeyBinding.ReadCurrentModifiers();
+            ThreadPool.QueueUserWorkItem(_ =>
+            {
+                try
+                {
+                    KeyObserved?.Invoke(virtualKey, modifiers);
+                }
+                catch (Exception ex)
+                {
+                    Log.Error("上报覆盖层按键失败。", ex);
+                }
+            });
+
+            return 1;
         }
 
         HotkeyBinding? hit = Match(data.VirtualKeyCode);

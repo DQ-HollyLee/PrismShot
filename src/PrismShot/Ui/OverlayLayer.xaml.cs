@@ -326,7 +326,7 @@ internal sealed partial class OverlayLayer : Window
     }
 
     /// <summary>回车键的语义：有选区就交出选区，没有就当整屏。</summary>
-    private OverlayResult AcceptCurrent()
+    public OverlayResult AcceptCurrent()
     {
         if (_state.Window is not null)
         {
@@ -370,6 +370,12 @@ internal sealed partial class OverlayLayer : Window
         };
 
     // ---------------- 绘制 ----------------
+
+    /// <summary>关闭遮罩压暗。用户想要「原色挑选」时把它调成 0。</summary>
+    public void SetDimAmount(byte alpha)
+    {
+        DimMask.Fill = new SolidColorBrush(Color.FromArgb(alpha, 0, 0, 0));
+    }
 
     public void Refresh()
     {
@@ -543,6 +549,9 @@ internal sealed partial class OverlayLayer : Window
         Math.Max(min, Math.Min(max, value));
 
     // ---------------- 工具栏 ----------------
+
+    /// <summary>切换工具。由工具栏按钮和宿主的数字键共用。</summary>
+    public void ApplyModePublic(SelectionMode mode) => ApplyMode(mode);
 
     private void ApplyMode(SelectionMode mode)
     {

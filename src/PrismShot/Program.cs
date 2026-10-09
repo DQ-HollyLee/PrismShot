@@ -7,6 +7,7 @@ using PrismShot.Core;
 using PrismShot.Core.Capture;
 using PrismShot.Core.Imaging;
 using PrismShot.Core.Interop;
+using PrismShot.Core.Ipc;
 using IoDirectory = System.IO.Directory;
 
 namespace PrismShot;
@@ -15,14 +16,14 @@ namespace PrismShot;
 /// 命令行入口。
 /// </summary>
 /// <remarks>
-/// 三条通道这里分岔：
+/// 三条通道在这里分岔：
 /// <list type="number">
-/// <item>无参数 → 常驻模式，进入 <c>App</c> 接管热键。</item>
-/// <item><c>--capture</c> → 抓一张并存盘，给 StarPie 插件和自测用。</item>
-/// <item><c>--probe</c> → 把显示器的 HDR 状态写成文本，排障用。</item>
+/// <item>无参数 → 常驻模式；若已经有实例在跑，则把命令转交过去然后自己退出。</item>
+/// <item><c>--capture</c> / <c>--probe</c> → 单次执行的自测与排障通道。</item>
+/// <item><c>--region</c> / <c>--screen</c> / <c>--window</c> / <c>--quit</c> → 控制常驻实例。</item>
 /// </list>
-/// 命令行通道是刻意留的产品能力而不是临时脚手架：插件要靠它调用截图，
-/// 而用户报「HDR 截图不对」时，第一件事就是让他跑一次 <c>--probe</c> 看看 WhiteLevel 到底多少。
+/// 命令行不是临时脚手架而是产品能力：StarPie 插件靠它调用截图，
+/// 用户来报「HDR 截图不对」时第一件事也是让他跑一次 <c>--probe</c>，看白电平到底是多少。
 /// </remarks>
 internal static class Program
 {
@@ -33,14 +34,16 @@ internal static class Program
         Log.Prune();
 
         string command = args.Length > 0 ? args[0] : string.Empty;
+
         try
         {
+            // 自测 / 排障这几条要在本进程里跑完，不参与「转交给常驻实例」这一步。
             return command switch
             {
                 "--capture" => Capture(args),
                 "--probe" => Probe(args),
                 "--version" => Version(),
-                _ => LaunchResidentMode(),
+                _ => ForwardOrReside(args),
             };
         }
         catch (Exception ex)
@@ -50,11 +53,98 @@ internal static class Program
         }
     }
 
-    /// <summary>常驻模式。App 一旦就位，这里换成 <c>App.Main</c>。</summary>
-    private static int LaunchResidentMode()
+    /// <summary>
+    /// 已经有一个实例在跑就把请求转过去，没有则自己成为常驻实例。
+    /// </summary>
+    private static int ForwardOrReside(string[] args)
     {
-        App app = new();
-        return app.Run();
+        using SingleInstanceGuard guard = new();
+        if (guard.TryAcquire())
+        {
+            App app = new();
+            return app.Run();
+        }
+
+        if (args.Length == 0)
+        {
+            // 双击图标启动了第二次。老老实实告诉用户一声，
+            // 而不是再起一个进程去抢互斥体 —— 那样会留下两个都半死不活的实例。
+            Console.WriteLine("PrismShot 已在运行。要截图请按 Win+Shift+S，或加 --screen / --region 参数。");
+            return 0;
+        }
+
+        IpcRequest request = Translate(args);
+        IpcResponse response = IpcClient.SendAsync(request).GetAwaiter().GetResult();
+
+        Console.WriteLine(IpcProtocol.Describe(response));
+        return response.Ok && string.IsNullOrEmpty(response.Error) ? 0 : 1;
+    }
+
+    /// <summary>把命令行参数翻成统一的 IPC 请求。</summary>
+    private static IpcRequest Translate(string[] args)
+    {
+        IpcRequest request = new();
+
+        foreach (string argument in args)
+        {
+            switch (argument.TrimStart('-').ToLowerInvariant())
+            {
+                case "screen":
+                case "full":
+                case "fullscreen":
+                    request.Mode = "screen";
+                    break;
+
+                case "window":
+                    request.Mode = "window";
+                    break;
+
+                case "freeform":
+                case "polygon":
+                    request.Mode = "freeform";
+                    break;
+
+                case "repeat":
+                    request.Mode = "repeat";
+                    break;
+
+                case "ping":
+                    request.Action = IpcActions.Ping;
+                    break;
+
+                case "reload":
+                    request.Action = IpcActions.Reload;
+                    break;
+
+                case "quit":
+                case "exit":
+                    request.Action = IpcActions.Quit;
+                    break;
+
+                case "nosave":
+                    request.NoSave = true;
+                    break;
+
+                case "noclipboard":
+                    request.SkipClipboard = true;
+                    break;
+            }
+        }
+
+        if (request.Action != IpcActions.Capture)
+        {
+            return request;
+        }
+
+        request.OutputPath = GetArgument(args, "--out");
+        request.Format = GetArgument(args, "--format");
+
+        if (int.TryParse(GetArgument(args, "--quality"), out int quality))
+        {
+            request.Quality = quality;
+        }
+
+        return request;
     }
 
     private static int Version()

@@ -1,0 +1,79 @@
+<Window
+    x:Class="PrismShot.Ui.ResultToast"
+    x:ClassModifier="internal"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    Title="PrismShot"
+    AllowsTransparency="True"
+    Background="Transparent"
+    ResizeMode="NoResize"
+    ShowActivated="False"
+    ShowInTaskbar="False"
+    SizeToContent="WidthAndHeight"
+    Topmost="True"
+    WindowStyle="None">
+
+    <Window.Triggers>
+        <EventTrigger RoutedEvent="Window.Loaded">
+            <BeginStoryboard>
+                <Storyboard>
+                    <DoubleAnimation
+                        From="0"
+                        To="1"
+                        Duration="0:0:0.18"
+                        Storyboard.TargetProperty="Opacity" />
+                    <DoubleAnimation
+                        From="0.92"
+                        To="1"
+                        Duration="0:0:0.18"
+                        Storyboard.TargetProperty="(UIElement.RenderTransform).(ScaleTransform.ScaleX)" />
+                    <DoubleAnimation
+                        From="0.92"
+                        To="1"
+                        Duration="0:0:0.18"
+                        Storyboard.TargetProperty="(UIElement.RenderTransform).(ScaleTransform.ScaleY)" />
+                </Storyboard>
+            </BeginStoryboard>
+        </EventTrigger>
+    </Window.Triggers>
+
+    <Border
+        x:Name="Card"
+        MinWidth="260"
+        MaxWidth="420"
+        Padding="10"
+        Background="#F22B2B2B"
+        BorderBrush="#3FFFFFFF"
+        BorderThickness="1"
+        CornerRadius="8"
+        Cursor="Hand"
+        MouseLeftButtonUp="OnCardClick"
+        RenderTransformOrigin="0.5,0.5">
+        <Border.RenderTransform>
+            <ScaleTransform ScaleX="1" ScaleY="1" />
+        </Border.RenderTransform>
+        <StackPanel Orientation="Horizontal">
+            <Border
+                Width="96"
+                Height="60"
+                Margin="0,0,10,0"
+                Background="#00000000"
+                CornerRadius="4">
+                <Image x:Name="Thumb" Stretch="Uniform" />
+            </Border>
+            <StackPanel VerticalAlignment="Center">
+                <TextBlock
+                    x:Name="TitleText"
+                    FontSize="13"
+                    FontWeight="SemiBold"
+                    Foreground="#FFF5F5F5" />
+                <TextBlock
+                    x:Name="HintText"
+                    Margin="0,2,0,0"
+                    FontSize="11"
+                    Foreground="#FFB8B8B8"
+                    Text="点击打开所在位置" />
+            </StackPanel>
+        </StackPanel>
+    </Border>
+</Window>
