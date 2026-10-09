@@ -32,6 +32,7 @@ internal static class WgcFrameGrabber
         "79C3F95B-31F7-4EC2-A464-632EF5D30760"
     );
 
+    /// <summary><c>ID3D11Texture2D</c> 的 IID。</summary>
     private static readonly Guid Texture2DInterfaceId = new(
         "6F15AAF2-D208-4E89-9AB4-489535D34F9C"
     );
@@ -153,32 +154,58 @@ internal static class WgcFrameGrabber
     /// 从 WinRT 的 <c>IDirect3DSurface</c> 里取出底层的 <c>ID3D11Texture2D</c> 指针。
     /// </summary>
     /// <remarks>
+    /// <para>
     /// 这一步绕不过：拿到 surface 不等于拿到像素，还要走「拷到暂存纹理 + Map」这一趟才能读到 CPU。
-    /// 接口 GUID 取自 Windows SDK 的 <c>windows.graphics.directx.direct3d11.interop.h</c>。
+    /// 而且 WinRT 的 surface 并不直接支持 <c>ID3D11Texture2D</c>（实测 QI 返回 E_NOINTERFACE），
+    /// 必须经 <c>IDirect3DDxgiInterfaceAccess</c> 转一手 —— 接口 GUID 取自 Windows SDK 的
+    /// <c>windows.graphics.directx.direct3d11.interop.h</c>。
+    /// </para>
+    /// <para>
+    /// <b>取 ABI 指针必须用 <c>IWinRTObject.NativeObject.ThisPtr</c>，不能用
+    /// <c>Marshal.GetIUnknownForObject</c></b>。后者对 C#/WinRT 投影对象返回的是包装器自己的
+    /// IUnknown（实测 QI 到 <c>IDirect3DDxgiInterfaceAccess</c> 返回 0x80004002），
+    /// 结果就是一个看起来成功的空指针 —— 再往下走会抛
+    /// 「Value cannot be null. (Parameter 'pUnk')」，而 WGC 整条通道会静默降级到 GDI。
+    /// </para>
+    /// <para>
+    /// <c>Marshal.GetObjectForIUnknown</c> 会接管传进去的那一份引用计数，
+    /// 所以这里不额外 Release；RCW 本身由 GC 管，一次截图一个，量级可忽略。
+    /// </para>
     /// </remarks>
     public static IntPtr GetTexturePointer(Winrt.IDirect3DSurface surface)
     {
-        IntPtr unknown = Marshal.GetIUnknownForObject(surface);
-        try
+        IntPtr thisPointer = ((WinRT.IWinRTObject)surface).NativeObject.ThisPtr;
+        if (thisPointer == IntPtr.Zero)
         {
-            Guid accessInterfaceId = new("A9B3D012-3DF2-4EE3-B8D1-8695F457D3C1");
-            Marshal.QueryInterface(unknown, ref accessInterfaceId, out IntPtr access);
-            try
-            {
-                var dxgiAccess =
-                    (IDirect3DDxgiInterfaceAccess)Marshal.GetObjectForIUnknown(access);
-                return dxgiAccess.GetInterface(Texture2DInterfaceId);
-            }
-            finally
-            {
-                Marshal.Release(access);
-            }
+            throw new InvalidOperationException("surface 的 ABI 指针为空。");
         }
-        finally
+
+        Guid accessInterfaceId = DxgiInterfaceAccessId;
+        int hr = Marshal.QueryInterface(
+            thisPointer,
+            ref accessInterfaceId,
+            out IntPtr accessPointer
+        );
+
+        if (hr < 0 || accessPointer == IntPtr.Zero)
         {
-            Marshal.Release(unknown);
+            throw new InvalidOperationException(
+                $"surface 不支持 IDirect3DDxgiInterfaceAccess：0x{hr:X8}"
+            );
         }
+
+        var dxgiAccess = (IDirect3DDxgiInterfaceAccess)Marshal.GetObjectForIUnknown(accessPointer);
+        Guid textureInterfaceId = Texture2DInterfaceId;
+        IntPtr texture = dxgiAccess.GetInterface(ref textureInterfaceId);
+        if (texture == IntPtr.Zero)
+        {
+            throw new InvalidOperationException("IDirect3DDxgiInterfaceAccess 没给出纹理指针。");
+        }
+
+        return texture;
     }
+
+    private static readonly Guid DxgiInterfaceAccessId = new("A9B3D012-3DF2-4EE3-B8D1-8695F457D3C1");
 
     [ComImport]
     [Guid("3628E81B-3CAC-4C60-B7F4-23CE0E0C3356")]
@@ -195,6 +222,7 @@ internal static class WgcFrameGrabber
     [InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
     private interface IDirect3DDxgiInterfaceAccess
     {
-        IntPtr GetInterface(in Guid riid);
+        /// <summary>返回 <c>riid</c> 对应的接口指针，引用计数归调用方。</summary>
+        IntPtr GetInterface(ref Guid riid);
     }
 }

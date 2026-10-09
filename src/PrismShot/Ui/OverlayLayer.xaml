@@ -6,7 +6,7 @@
     Title="PrismShot"
     AllowsTransparency="True"
     Background="Transparent"
-    Cursor="Crosshair"
+    Cursor="Cross"
     Focusable="False"
     ResizeMode="NoResize"
     ShowActivated="False"
