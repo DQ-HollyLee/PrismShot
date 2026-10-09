@@ -34,7 +34,7 @@ internal sealed class D3D11CaptureDevice : IDisposable
     private readonly ID3D11Device _device;
     private readonly ID3D11DeviceContext _context;
     private readonly IDXGIDevice _dxgiDevice;
-    private readonly Winrt.IDirect3DDevice _winrtDevice;
+    private Winrt.IDirect3DDevice _winrtDevice;
     private bool _disposed;
 
     private D3D11CaptureDevice(ID3D11Device device, ID3D11DeviceContext context)
@@ -42,10 +42,41 @@ internal sealed class D3D11CaptureDevice : IDisposable
         _device = device;
         _context = context;
         _dxgiDevice = device.QueryInterface<IDXGIDevice>();
-        _winrtDevice = D3D11.CreateDirect3D11DeviceFromDXGIDevice<Winrt.IDirect3DDevice>(
-            _dxgiDevice
-        );
+        _winrtDevice = WrapAsWinrtDevice(_dxgiDevice);
     }
+
+    /// <summary>
+    /// 把 DXGI 设备包成 WGC 认的 <c>IDirect3DDevice</c>。
+    /// </summary>
+    /// <remarks>
+    /// 这里不用 Vortice 提供的泛型助手，也不用 <c>Marshal.GetObjectForIUnknown</c> 直接转：
+    /// 那两条路得到的都是裸的 <c>System.__ComObject</c>，看起来能当接口用，
+    /// 可一旦再把它传回 COM（<c>CreateFreeThreaded</c> 就要这么一次），
+    /// CLR 会去为它造 CCW，然后抛「无法为接口 A37624AB-… 创建 CCW」——
+    /// 也就是 <c>IDirect3DDevice</c> 的 IID。症状是 WGC 抓帧失败并静默降级到 GDI，
+    /// 于人眼看就是「HDR 截图还是过曝」，且日志里只留一行看似无关的 COM 错误。
+    /// 正确做法是用 <c>WinRT.MarshalInterface.FromAbi</c> 走 C#/WinRT 自己的 RCW 工厂，
+    /// 拿到的对象是带 IInspectable 的正经代理。
+    /// </remarks>
+    private static Winrt.IDirect3DDevice WrapAsWinrtDevice(IDXGIDevice dxgiDevice)
+    {
+        int hr = CreateDirect3D11DeviceFromDXGIDevice(dxgiDevice.NativePointer, out IntPtr pointer);
+        if (hr < 0 || pointer == IntPtr.Zero)
+        {
+            throw new InvalidOperationException(
+                $"CreateDirect3D11DeviceFromDXGIDevice 失败：0x{hr:X8}"
+            );
+        }
+
+        // FromAbi 接管这份引用计数，不要再 Release。
+        return WinRT.MarshalInterface<Winrt.IDirect3DDevice>.FromAbi(pointer);
+    }
+
+    [DllImport("D3D11.dll", EntryPoint = "CreateDirect3D11DeviceFromDXGIDevice")]
+    private static extern int CreateDirect3D11DeviceFromDXGIDevice(
+        IntPtr dxgiDevice,
+        out IntPtr graphicsDevice
+    );
 
     /// <summary>WGC 帧池要的那个东西。坐标是 WinRT，不是 Vortice。</summary>
     public Winrt.IDirect3DDevice Direct3DDevice => _winrtDevice;

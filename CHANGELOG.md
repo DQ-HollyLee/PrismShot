@@ -4,6 +4,29 @@
 
 ## [Unreleased]
 
+### 修复：WGC 抓帧静默降级到 GDI
+
+第一次实机跑通后复查日志，发现 `pipeline` 其实是 GDI、WGC 早就失败了：
+
+```
+[WRN] \\.\DISPLAY1：WGC 抓帧失败，改用 GDI。
+      Failed to create a CCW for object of type 'System.__ComObject'
+      for interface with IID 'A37624AB-8D5F-4650-9D3E-9EAE3D9BC670'
+```
+
+`A37624AB-8D5F-4650-9D3E-9EAE3D9BC670` 正是 WinRT `IDirect3DDevice` 的 IID。
+根因是 `CreateDirect3D11DeviceFromDXGIDevice` 的结果被 `Marshal.GetObjectForIUnknown`
+包成了裸 `__ComObject`（Vortice 的泛型助手内部也是这条），拿去当接口用没问题，
+可一旦再交回 COM（`Direct3D11CaptureFramePool.CreateFreeThreaded` 就要交一次），
+CLR 会尝试为它造 CCW 然后失败。
+
+改用 `WinRT.MarshalInterface<IDirect3DDevice>.FromAbi(ptr)` 走 C#/WinRT 自己的 RCW 工厂后
+实测 `pipeline = WGC`，浮点帧到手，360 尼特白电平下的曝光正确。
+
+⚠️ 这个坑的可怕之处在于：**失败是静默降级**。图能出、看起来正常，
+只是回到了 8bit GDI 那条路 —— 也就是我们要取代的那条。以后任何「看起来对」的验证，
+都必须同时核对日志里的 `通道=` 是 WGC 而不是 GDI。
+
 ### 已实机验证（HDR 环境）
 
 本机为 Win11 build 26300 + 单屏 2048x1152 + **HDR 已开、SDR 白电平 360 尼特**。
