@@ -41,7 +41,7 @@ PrismShot 走的是另一条路：**WGC（Windows.Graphics.Capture）取 `R16G16
 | 区域截图 | `Win+Shift+S` |
 | 全屏截图 | `PrintScreen` |
 | 窗口截图 / 重复上次选区 | 不绑定（自己配） |
-| 输出格式 | JPG（质量 92）—— StarPie 的 AI OCR 吃这一口最稳 |
+| 输出格式 | PNG（无损）—— jpg / bmp / tif / gif 也都支持；圈选只能用 PNG，因为它需要透明通道 |
 | 保存位置 | 图片库\PrismShot |
 | 剪贴板 | 同时放一份位图，可直接粘贴进聊天框 |
 | 截图后提示 | 右下角浮出缩略图，3 秒消失（可关） |

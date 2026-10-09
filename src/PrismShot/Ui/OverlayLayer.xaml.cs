@@ -262,6 +262,19 @@ internal sealed partial class OverlayLayer : Window
         if (mode == SelectionMode.Freeform)
         {
             _state.Dragging = false;
+
+            // 松开即定案，和原生截图工具一致：画完不必再点一次确认。
+            // 原来这里只把 Dragging 置 false 就完事了，结果一次都没提交 ——
+            // 画完停在原地，再按下又往同一个顶点列表里继续追加，看着像「还能接着画」。
+            //
+            // 顶点不足 3 个说明只是点了一下、没真的画，那就留在原地继续等，
+            // 不要拿一个空结果把整个截图取消掉。
+            if (_state.Freeform.Count >= 3)
+            {
+                Complete(_state.ToResult());
+                return;
+            }
+
             Refresh();
         }
     }

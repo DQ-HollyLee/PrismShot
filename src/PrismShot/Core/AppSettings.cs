@@ -31,8 +31,11 @@ internal sealed class AppSettings
 
 internal sealed class OutputSettings
 {
-    /// <summary>jpg / png / bmp / tif / gif。默认 jpg —— StarPie 的 AI OCR 吃这一口最稳。</summary>
-    public string Format { get; set; } = "jpg";
+    /// <summary>
+    /// jpg / png / bmp / tif / gif。默认 png —— 无损，且是唯一装得下
+    /// 圈选（任意形状）透明通道的格式。
+    /// </summary>
+    public string Format { get; set; } = "png";
 
     public int JpegQuality { get; set; } = 92;
 
@@ -202,7 +205,7 @@ internal static class SettingsStore
 
         if (string.IsNullOrWhiteSpace(settings.Output.Format))
         {
-            settings.Output.Format = "jpg";
+            settings.Output.Format = "png";
         }
 
         return settings;

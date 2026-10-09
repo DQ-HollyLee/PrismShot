@@ -73,7 +73,11 @@ internal sealed class IpcServer : IDisposable
             }
             catch (IOException ex)
             {
+                // 必须有退避。一旦持续抛异常（例如 4 个管道实例全被占满），
+                // 没有这句就是每秒几万次的忙循环：疯狂建对象、疯狂写日志，
+                // 内存和 CPU 都是这么被吃掉的。
                 Log.Debug($"管道连接中断：{ex.Message}");
+                Thread.Sleep(TimeSpan.FromMilliseconds(250));
             }
             catch (Exception ex)
             {

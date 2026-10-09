@@ -215,6 +215,43 @@ internal sealed class App : Application
         finally
         {
             Interlocked.Exchange(ref _busy, 0);
+            ReleaseFrameMemory();
+        }
+    }
+
+    /// <summary>
+    /// 一次截图结束后立刻把大块像素缓冲还回去。
+    /// </summary>
+    /// <remarks>
+    /// 每帧回读出来的像素、色调映射的中间结果、裁剪出的选区，都是十几 MB 起步的
+    /// 大对象堆分配。常驻进程一旦空闲下来，GC 就再也不主动碰它们了 ——
+    /// 于是工作集稳稳停在几百 MB 甚至一个 GB 上下不来，而实际上那些图早就用不上了。
+    /// <para>
+    /// 放在「一次截图彻底结束」这个明确的时点上收一次，比让 GC 自己挑时机靠谱得多：
+    /// 代价是一次几十毫秒的停顿，而它发生在用户已经拿到图之后，感觉不到。
+    /// </para>
+    /// </remarks>
+    private static void ReleaseFrameMemory()
+    {
+        // 只有工作集真的一路涨上去了才动手。
+        // 强制 Gen2 是 stop-the-world 的，每张图都来一次等于给每次截图
+        // 都添一次看得见的停顿 —— 平时那几块缓冲让 GC 自己找时机收就够了。
+        long threshold = 256L * 1024 * 1024;
+        if (Environment.WorkingSet < threshold)
+        {
+            return;
+        }
+
+        try
+        {
+            GC.Collect(2, GCCollectionMode.Forced, blocking: true);
+            GC.WaitForPendingFinalizers();
+            GC.Collect(2, GCCollectionMode.Forced, blocking: true);
+            Log.Info($"已回收截图缓冲，工作集 {Environment.WorkingSet / (1024 * 1024)} MB。");
+        }
+        catch (Exception ex)
+        {
+            Log.Debug($"回收截图缓冲时忽略异常：{ex.Message}");
         }
     }
 

@@ -116,74 +116,146 @@ internal sealed class Raster
             return;
         }
 
+        int vertexCount = polygon.Count;
+
+        // 1) 拆成边。水平边直接丢掉：它跟任何扫描线都交不出有意义的一点，
+        //    留着只会让交点翻倍，把下面的奇偶判据搅乱。
+        List<ScanEdge> edges = new(vertexCount);
+        for (int index = 0; index < vertexCount; index++)
+        {
+            Point32 current = polygon[index];
+            Point32 next = polygon[(index + 1) % vertexCount];
+            if (current.Y == next.Y)
+            {
+                continue;
+            }
+
+            edges.Add(ScanEdge.Of(current, next));
+        }
+
+        if (edges.Count == 0)
+        {
+            // 退化成一条水平带：围不出面积，整块都算外面。
+            for (int row = 0; row < Height; row++)
+            {
+                ClearAlphaRow(row);
+            }
+
+            return;
+        }
+
+        // 2) 边按起始行排好，逐行只把「从这一行开始」的捞进活动表。
+        //
+        //    原来的写法是每一行都把全部几千条边重扫一遍，还给每行 new 一个
+        //    同容量的 List<double> —— 2560x1440 全屏圈选，那是上亿次判断
+        //    外加一千多次大数组分配，进程直接拖死（「圈选保存后卡死」就是它）。
+        //    改成活动边表之后，每行只碰真正跨过这一行的那几条边。
+        edges.Sort(static (left, right) => left.YLow.CompareTo(right.YLow));
+
+        List<ScanEdge> active = new(edges.Count);
+        double[] crossings = new double[edges.Count];
+        int nextEdge = 0;
+
         for (int row = 0; row < Height; row++)
         {
             int worldY = originY + row;
-            List<double> crossings = new(polygon.Count);
 
-            for (int index = 0; index < polygon.Count; index++)
+            while (nextEdge < edges.Count && edges[nextEdge].YLow <= worldY)
             {
-                Point32 current = polygon[index];
-                Point32 next = polygon[(index + 1) % polygon.Count];
-
-                bool currentBelow = current.Y <= worldY;
-                bool nextBelow = next.Y <= worldY;
-                if (currentBelow == nextBelow)
-                {
-                    continue;
-                }
-
-                // 半开区间约定：只在「向上穿过」这条边上记一次交点，
-                // 免得顶点正好落在扫描线上时被数两次，导致内部判定翻转。
-                if (next.Y == current.Y)
-                {
-                    continue;
-                }
-
-                double ratio = (double)(worldY - current.Y) / (next.Y - current.Y);
-                crossings.Add(current.X + (ratio * (next.X - current.X)));
+                active.Add(edges[nextEdge]);
+                nextEdge++;
             }
 
-            if (crossings.Count == 0)
+            // 半开区间 [YLow, YHigh)：一到 YHigh 就该退场。
+            // 否则顶点正好落在扫描线上时会被数两次，整行的内外判定跟着翻过来。
+            for (int index = active.Count - 1; index >= 0; index--)
             {
-                // 整行都在多边形外。
+                if (active[index].YHigh <= worldY)
+                {
+                    active[index] = active[^1];
+                    active.RemoveAt(active.Count - 1);
+                }
+            }
+
+            int crossingCount = 0;
+            for (int index = 0; index < active.Count; index++)
+            {
+                crossings[crossingCount++] = active[index].XAt(worldY);
+            }
+
+            if (crossingCount == 0)
+            {
                 ClearAlphaRow(row);
                 continue;
             }
 
-            crossings.Sort();
-            int rowOffset = row * Stride;
-            for (int column = 0; column < Width; column++)
+            Array.Sort(crossings, 0, crossingCount);
+
+            // 3) 交点把这一行切成若干段，偶数段在外面。
+            //    按区间整段清，而不是逐像素去问「我在不在里面」——
+            //    后者是「宽 × 高 × 交点数」，前者只有「宽 × 高」。
+            ClearAlphaSpan(row, double.NegativeInfinity, crossings[0], originX);
+            for (int index = 1; index < crossingCount - 1; index += 2)
             {
-                int pixelOffset = rowOffset + (column * 4);
-                Pixels[pixelOffset + 3] = IsInsideOdd(crossings, originX + column)
-                    ? Pixels[pixelOffset + 3]
-                    : (byte)0;
+                ClearAlphaSpan(row, crossings[index], crossings[index + 1], originX);
             }
+
+            ClearAlphaSpan(row, crossings[crossingCount - 1], double.PositiveInfinity, originX);
         }
     }
 
-    private void ClearAlphaRow(int row)
+    private void ClearAlphaRow(int row) =>
+        ClearAlphaSpan(row, double.NegativeInfinity, double.PositiveInfinity, 0);
+
+    /// <summary>把某一行里 [worldFrom, worldTo) 这一段的 alpha 清零。</summary>
+    private void ClearAlphaSpan(int row, double worldFrom, double worldTo, int originX)
     {
-        int offset = row * Stride + 3;
-        for (int column = 0; column < Width; column++)
+        int start = double.IsNegativeInfinity(worldFrom)
+            ? 0
+            : (int)Math.Ceiling(worldFrom - originX);
+        int end = double.IsPositiveInfinity(worldTo)
+            ? Width
+            : (int)Math.Ceiling(worldTo - originX);
+
+        if (start < 0)
         {
-            Pixels[offset + (column * 4)] = 0;
+            start = 0;
+        }
+
+        if (end > Width)
+        {
+            end = Width;
+        }
+
+        if (start >= end)
+        {
+            return;
+        }
+
+        int offset = (row * Stride) + (start * 4) + 3;
+        for (int column = start; column < end; column++)
+        {
+            Pixels[offset] = 0;
+            offset += 4;
         }
     }
 
-    private static bool IsInsideOdd(List<double> crossings, double worldX)
+    /// <summary>
+    /// 扫描线用的一条边。存「y 较小那一端」的坐标加斜率，逐行只要一次乘法。
+    /// </summary>
+    private readonly record struct ScanEdge(int YLow, int YHigh, double XLow, double Slope)
     {
-        int count = 0;
-        foreach (double x in crossings)
+        public static ScanEdge Of(Point32 a, Point32 b)
         {
-            if (x > worldX)
-            {
-                count++;
-            }
+            bool aIsLower = a.Y < b.Y;
+            return new ScanEdge(
+                aIsLower ? a.Y : b.Y,
+                aIsLower ? b.Y : a.Y,
+                aIsLower ? a.X : b.X,
+                (double)(b.X - a.X) / (b.Y - a.Y)
+            );
         }
 
-        // 奇数个交点在右侧 = 内部。这里用严格大于，免得顶点处左右都算，退化成同样的奇偶错乱。
-        return (count & 1) == 1;
+        public double XAt(int worldY) => XLow + ((worldY - YLow) * Slope);
     }
 }

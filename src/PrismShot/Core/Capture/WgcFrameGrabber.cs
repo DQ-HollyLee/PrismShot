@@ -194,15 +194,36 @@ internal static class WgcFrameGrabber
             );
         }
 
-        var dxgiAccess = (IDirect3DDxgiInterfaceAccess)Marshal.GetObjectForIUnknown(accessPointer);
-        Guid textureInterfaceId = Texture2DInterfaceId;
-        IntPtr texture = dxgiAccess.GetInterface(ref textureInterfaceId);
-        if (texture == IntPtr.Zero)
+        try
         {
-            throw new InvalidOperationException("IDirect3DDxgiInterfaceAccess 没给出纹理指针。");
-        }
+            var dxgiAccess = (IDirect3DDxgiInterfaceAccess)
+                Marshal.GetObjectForIUnknown(accessPointer);
+            try
+            {
+                Guid textureInterfaceId = Texture2DInterfaceId;
+                IntPtr texture = dxgiAccess.GetInterface(ref textureInterfaceId);
+                if (texture == IntPtr.Zero)
+                {
+                    throw new InvalidOperationException(
+                        "IDirect3DDxgiInterfaceAccess 没给出纹理指针。"
+                    );
+                }
 
-        return texture;
+                return texture;
+            }
+            finally
+            {
+                // RCW 自己那一份也要显式放掉。等 GC 去收的话，每截一张就压着
+                // 一整条 surface / texture 链不放 —— 而这是非托管内存，GC 根本看不见它。
+                Marshal.FinalReleaseComObject(dxgiAccess);
+            }
+        }
+        finally
+        {
+            // QueryInterface 加的那一份引用归调用方，用完必须还回去。
+            // 少了这一句就是每次截图泄漏一个 COM 引用，几百 MB 是几十次截图堆出来的。
+            Marshal.Release(accessPointer);
+        }
     }
 
     private static readonly Guid DxgiInterfaceAccessId = new("A9B3D012-3DF2-4EE3-B8D1-8695F457D3C1");

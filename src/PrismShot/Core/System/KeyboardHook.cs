@@ -27,6 +27,15 @@ internal sealed class KeyboardHook : IDisposable
 {
     private const uint InjectedFlag = 0x10;
 
+    // 左右分身的虚拟键码。钩子报上来的有时是 0x10/0x11/0x12 这种通用码，
+    // 有时是左右分身 —— 漏认一个，就等于漏放一次抬起。
+    private const uint VirtualKeyLeftShift = 0xA0;
+    private const uint VirtualKeyRightShift = 0xA1;
+    private const uint VirtualKeyLeftControl = 0xA2;
+    private const uint VirtualKeyRightControl = 0xA3;
+    private const uint VirtualKeyLeftMenu = 0xA4;
+    private const uint VirtualKeyRightMenu = 0xA5;
+
     private readonly ManualResetEventSlim _ready = new(false);
     private readonly object _gate = new();
     private readonly List<HotkeyBinding> _bindings = new();
@@ -39,7 +48,8 @@ internal sealed class KeyboardHook : IDisposable
     private uint _threadId;
     private volatile bool _disposed;
     private volatile bool _suspended;
-    private volatile bool _swallowWindowsKeyUp;
+    /// <summary>按下被吞掉、但抬起还没还回去的主键码。0 表示没有。</summary>
+    private volatile uint _swallowKeyUp;
     private volatile bool _overlayKeys;
 
     public KeyboardHook()
@@ -201,11 +211,25 @@ internal sealed class KeyboardHook : IDisposable
 
         if (isKeyUp)
         {
-            // Win 键抬起要额外吞掉一次：我们把 Win+Shift+S 的 S 吞了，
-            // 于是系统眼里就是「Win 按下又松开，中间什么都没发生」，会顺手弹出开始菜单。
-            if (_swallowWindowsKeyUp && IsWindowsKey(data.VirtualKeyCode))
+            // 修饰键的抬起必须无条件放行，而且要排在**所有吞键规则之前**。
+            // Win 的按下早就交给系统了，只吞不吐，系统眼里 Win 就永远按着 ——
+            // 于是之后按 Q 变成 Win+Q、按 I 变成 Win+I，就是用户报的那个现象。
+            if (IsModifierKey(data.VirtualKeyCode))
             {
-                _swallowWindowsKeyUp = false;
+                _swallowKeyUp = 0;
+                return Win32.CallNextHookEx(IntPtr.Zero, code, wParam, lParam);
+            }
+
+            // 组合键主键的抬起也吞掉：按下没让系统看见，抬起也别让它看见。
+            if (_swallowKeyUp != 0 && data.VirtualKeyCode == _swallowKeyUp)
+            {
+                _swallowKeyUp = 0;
+                return 1;
+            }
+
+            // 覆盖层独占期间，普通键的抬起也吞，与按下成对。
+            if (_overlayKeys)
+            {
                 return 1;
             }
 
@@ -224,10 +248,9 @@ internal sealed class KeyboardHook : IDisposable
             return Win32.CallNextHookEx(IntPtr.Zero, code, wParam, lParam);
         }
 
-        if ((hit.Modifiers & HotkeyModifiers.Win) != 0)
-        {
-            _swallowWindowsKeyUp = true;
-        }
+        // 只吞主键本身。修饰键（Win/Shift/…）的按下是照常交给系统的，
+        // 它们的抬起就必须原样还回去 —— 见 keyup 分支那条规则的说明。
+        _swallowKeyUp = data.VirtualKeyCode;
 
         HotkeyBinding captured = hit;
         Action<HotkeyBinding>? subscribers = Triggered;
@@ -289,8 +312,22 @@ internal sealed class KeyboardHook : IDisposable
         return null;
     }
 
-    private static bool IsWindowsKey(uint virtualKey) =>
-        virtualKey == Win32.VirtualKeyLeftWindows || virtualKey == Win32.VirtualKeyRightWindows;
+    /// <summary>
+    /// 修饰键判定。它只有一个用途：让抬起无条件放行（见 <see cref="OnHook"/>）。
+    /// 这些键的 down / up 必须成对交给系统，任一边被吞，系统就一直当成按着。
+    /// </summary>
+    private static bool IsModifierKey(uint virtualKey) =>
+        virtualKey is Win32.VirtualKeyLeftWindows
+            or Win32.VirtualKeyRightWindows
+            or Win32.VirtualKeyShift
+            or Win32.VirtualKeyControl
+            or Win32.VirtualKeyMenu
+            or VirtualKeyLeftShift
+            or VirtualKeyRightShift
+            or VirtualKeyLeftControl
+            or VirtualKeyRightControl
+            or VirtualKeyLeftMenu
+            or VirtualKeyRightMenu;
 
     public void Dispose()
     {

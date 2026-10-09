@@ -135,10 +135,18 @@ internal sealed class CaptureSession : IDisposable
         ImageOutputFormat format = ImageWriter.Parse(request.Format ?? _settings.Output.Format);
         int quality = request.Quality > 0 ? request.Quality : _settings.Output.JpegQuality;
 
-        // 圈选的输出要透明底，否则贴到深色文档上时多边形外面那圈还是屏幕内容。
-        // 只在编码器支持 alpha 时做 —— JPEG 没有 alpha，硬改只会让画面发黑。
-        if (polygon is { Count: >= 3 } && SupportsAlpha(format))
+        // 圈选出来的不规则形状，只有带 alpha 通道的格式才装得下。
+        // 而默认格式是 JPG（为了 OCR 顺手），它偏偏没有 alpha ——
+        // 照原样存的话，用户圈了半天存出来的还是一整张外接矩形，等于白圈。
+        // 所以这里一律升级成 PNG：「圈了个形状」是用户明确表达过的意图，比默认格式优先。
+        if (polygon is { Count: >= 3 })
         {
+            if (!SupportsAlpha(format))
+            {
+                Log.Info($"圈选结果需要透明通道，输出格式已由 {format} 升级为 PNG。");
+                format = ImageOutputFormat.Png;
+            }
+
             raster.ApplyPolygonAlpha(polygon, region.Left, region.Top);
         }
 
