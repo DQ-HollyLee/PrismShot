@@ -1,0 +1,51 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <!-- 为什么是 22621 而不是 19041：
+         DisplayInformation.CreateForDisplayId(DisplayId) 这条查询某块屏 HDR 状态 / SDR 白电平的路，
+         只存在于 22000 之后的合约里，19041 的投影根本不含这两个类型。
+         抬高 TFM 只影响编译期能看到多少 API，不影响运行在哪版 Windows —— 所有高于最低版本的调用
+         都套了 try/catch，Win10 上失败会自动退回「按 SDR 处理」这条同样正确的老路
+         （Win10 的 WGC 本来也给不出 float 帧）。 -->
+    <TargetFramework>net8.0-windows10.0.22621.0</TargetFramework>
+    <TargetPlatformMinVersion>10.0.17763.0</TargetPlatformMinVersion>
+    <RootNamespace>PrismShot</RootNamespace>
+    <AssemblyName>PrismShot</AssemblyName>
+    <Product>PrismShot</Product>
+
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <LangVersion>12.0</LangVersion>
+    <UseWPF>true</UseWPF>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <Platforms>x64;ARM64</Platforms>
+    <PlatformTarget>x64</PlatformTarget>
+
+    <!-- 版本号由 version.json 统一维护，build.ps1 会把那两个数同步到这里，不要手写 -->
+    <Version>0.1.0</Version>
+    <AssemblyVersion>0.1.0.0</AssemblyVersion>
+    <FileVersion>0.1.0.0</FileVersion>
+    <Company>PrismShot</Company>
+    <Copyright>Copyright (c) 2026 PrismShot contributors</Copyright>
+
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <SatelliteResourceLanguages>zh-Hans;en</SatelliteResourceLanguages>
+    <EnableWindowsTargeting>true</EnableWindowsTargeting>
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
+    <NoWarn>$(NoWarn);CA1416</NoWarn>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Vortice：纯托管 P/Invoke 绑定，不带任何 native dll。本项目只用它的 D3D11 部分，
+         用途是把 WGC 给的 GPU 纹理拷到一张 CPU 可读的暂存纹理再回读。
+         手写完整 ID3D11DeviceContext vtable 有 120 多个槽位，错一个就是随机崩溃，
+         换它的代价远小于收益。 -->
+    <PackageReference Include="Vortice.Direct3D11" Version="3.6.2" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Update="app.manifest" CopyToOutputDirectory="Never" />
+  </ItemGroup>
+
+</Project>

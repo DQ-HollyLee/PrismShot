@@ -4,6 +4,14 @@
 
 ## [Unreleased]
 
+### 进行中
+
+- HDR 信息查询：确认 .NET WinRT 投影里没有 `DisplayInformation.CreateForDisplayId`（那是 WinAppSDK 的东西，
+  为此拖整套 AppSDK 不值得），改用纯 Win32 DisplayConfig —— 自 Win10 1709 起就有，
+  且 `SDRWhiteLevel / 1000 * 80` 的单位口径与 Chromium、Kodi 的实现一致。
+- 抓帧层：D3D11 设备（长期持有，避免每次按快门重建）、DXGI→WinRT 互操作、GPU 纹理回读、
+  WGC 单帧抓取（`CreateFreeThreaded` + 具名回调 + 超时保护）。
+
 ## [0.1.0] - 2026-10-10
 
 ### 新增
