@@ -195,7 +195,7 @@ internal static class Program
     private static int Capture(string[] args)
     {
         string output = GetArgument(args, "--out")
-            ?? Path.Combine(AppPaths.DataDirectory, "capture.jpg");
+            ?? Path.Combine(AppPaths.DataDirectory, "capture.png");
         ImageOutputFormat format = ImageWriter.Parse(
             GetArgument(args, "--format") ?? Path.GetExtension(output).TrimStart('.')
         );

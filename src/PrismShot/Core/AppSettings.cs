@@ -26,7 +26,11 @@ internal sealed class AppSettings
 
     public RecorderSettings Recorder { get; set; } = new();
 
-    public const int CurrentSchemaVersion = 1;
+    /// <summary>
+    /// 升到 2 的那一版把默认输出格式从 JPG 换成了 PNG —— JPG 没有透明通道，
+    /// 圈选（任意形状）存出来只能是外接矩形。见 <see cref="SettingsStore.Normalize"/> 里的迁移。
+    /// </summary>
+    public const int CurrentSchemaVersion = 2;
 }
 
 internal sealed class OutputSettings
@@ -206,6 +210,21 @@ internal static class SettingsStore
         if (string.IsNullOrWhiteSpace(settings.Output.Format))
         {
             settings.Output.Format = "png";
+        }
+
+        // schema 1 → 2：默认输出格式 JPG → PNG。
+        //
+        // 老配置里那句 "jpg" 是当初自动写进去的默认值，不是用户手改的偏好 ——
+        // 留着它，圈选就永远存不出形状（JPG 没有 alpha 通道，遮罩会被整段跳过）。
+        // 所以升级时把它换成 png；这样改过一次之后，用户再想手动调回 jpg，没人会再动它。
+        if (settings.SchemaVersion < 2)
+        {
+            if (string.Equals(settings.Output.Format, "jpg", StringComparison.OrdinalIgnoreCase))
+            {
+                settings.Output.Format = "png";
+            }
+
+            settings.SchemaVersion = AppSettings.CurrentSchemaVersion;
         }
 
         return settings;
