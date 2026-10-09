@@ -4,6 +4,13 @@
 
 ## [Unreleased]
 
+### 已实机验证（HDR 环境）
+
+本机为 Win11 build 26300 + 单屏 2048x1152 + **HDR 已开、SDR 白电平 360 尼特**。
+在这个白电平下，浮点帧里一个普通的白色像素值是 4.5 ——
+按 1.0 去当 SDR 解读就是教科书级的过曝，而原生工具正是栽在这里。
+实测 `--capture` 出来的图曝光正确，验证了「按每屏白电平回缩放」这条路径成立。
+
 ### 进行中
 
 - HDR 信息查询：确认 .NET WinRT 投影里没有 `DisplayInformation.CreateForDisplayId`（那是 WinAppSDK 的东西，

@@ -86,16 +86,19 @@ internal sealed class D3D11CaptureDevice : IDisposable
         return new D3D11CaptureDevice(device, context);
     }
 
-    /// <summary>把一张 GPU 纹理原样拷回 CPU。</summary>
-    public unsafe ReadbackTexture Readback(IntPtr texturePointer)
+    /// <summary>
+    /// 把一张 GPU 纹理原样拷回 CPU。
+    /// </summary>
+    /// <param name="source">
+    /// 已包装好的纹理对象。<b>ownership 由调用方持有</b>：Vortice 的指针构造函数不会自己 AddRef，
+    /// 所以调用方把这一份引用计数原样移交进来，Dispose 时正好释放干净 —— 两边各加一次、
+    /// 或各减一次，都会在几百次截图之后变成随机崩溃或显存泄漏，这里必须按这一条走。
+    /// </param>
+    public unsafe ReadbackTexture Readback(ID3D11Texture2D source)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
-        if (texturePointer == IntPtr.Zero)
-        {
-            throw new ArgumentException("纹理指针为空。", nameof(texturePointer));
-        }
+        ArgumentNullException.ThrowIfNull(source);
 
-        using ID3D11Texture2D source = new(texturePointer);
         Texture2DDescription description = source.Description;
 
         bool isFloat16 = description.Format == Format.R16G16B16A16_Float;
