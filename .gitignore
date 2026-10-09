@@ -1,0 +1,23 @@
+# 参考仓库克隆（本项目只读他的源码做参考，不入库）
+reference/
+
+# 中间产物 / 缓存 / 临时文件
+.cache/
+[Bb]in/
+[Oo]bj/
+[Tt]est[Rr]esult*/
+artifacts/
+publish/
+*.user
+*.suo
+
+# 日志
+*.log
+
+# Visual Studio / Rider / VS Code 用户文件
+.vs/
+.idea/
+.vscode/settings.json
+
+# 构建脚本自己拉的 dotnet SDK
+.dotnet/
