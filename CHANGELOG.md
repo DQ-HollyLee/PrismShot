@@ -4,6 +4,28 @@
 
 ## [Unreleased]
 
+### 修复：DPI 感知在命令行路径下失效
+
+同一个 app.manifest，走 WPF 常驻路径时 `GetSystemMetrics` 给 2560x1440，
+走纯命令行路径（`--capture` / `--probe`）却给 2048x1152 —— 差 1.25 倍，
+正是本机 125% 缩放的虚拟化结果。后果是 `--capture` 拼出一张缩小两成的虚拟桌面，
+`--probe` 报错尺寸，按坐标裁剪的区域整体缩水，且完全没有报错。
+
+改为在 `Main` 首行显式调用 `SetProcessDpiAwarenessContext(PerMonitorV2)`，
+三条入口（常驻 / 自测 / 插件调用）行为一致，不再依赖清单是否被应用。
+复验：`--probe` 现报 2560x1440 / scale 1.25。
+
+### 修复：覆盖层关闭与键盘回调的线程归属
+
+低级钩子的按键回调在线程池线程上，而它触发的 `OverlayHost.Close()` 直接调了
+`Window.Close()` → 「调用线程无法访问此对象」。异常被吞掉后窗口留在屏幕上，
+表现就是「按了 Esc 但蒙版不消失」。同时 `KeyObserved -=` 与在途调用相撞，
+抛 `Collection was modified`。
+
+现在：OverlayHost 的所有入口统一切回 UI 线程；钩子侧先把委托取成局部快照再投递。
+另：IPC 服务端原本一条连接就地处理，覆盖层开着时整条管道被堵死，
+连 ping / quit 都排队。改为每条连接一个任务，抓帧的互斥交给上层的 busy 标记。
+
 ### 修复：WGC 抓帧静默降级到 GDI
 
 第一次实机跑通后复查日志，发现 `pipeline` 其实是 GDI、WGC 早就失败了：

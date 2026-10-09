@@ -43,10 +43,10 @@ internal sealed class IpcServer : IDisposable
         {
             try
             {
-                using NamedPipeServerStream pipe = new(
+                NamedPipeServerStream pipe = new(
                     IpcProtocol.PipeName,
                     PipeDirection.InOut,
-                    1,
+                    maxNumberOfServerInstances: 4,
                     PipeTransmissionMode.Message,
                     PipeOptions.Asynchronous
                 );
@@ -64,7 +64,12 @@ internal sealed class IpcServer : IDisposable
                     connect.Wait(TimeSpan.FromMilliseconds(100));
                 }
 
-                HandleConnection(pipe);
+                // 每条连接各自一个任务，而不是就地处理。
+                // 就地处理时，一次「覆盖层还开着」的截图会把整个管道堵死 ——
+                // 那之后连 ping / quit 都要排队，用户会觉得软件整个卡住了。
+                // 抓帧的互斥由上层（App 的 busy 标记）保证，不需要靠管道串行化来实现。
+                NamedPipeServerStream connection = pipe;
+                _ = Task.Run(() => HandleConnection(connection));
             }
             catch (IOException ex)
             {
@@ -80,24 +85,42 @@ internal sealed class IpcServer : IDisposable
 
     private void HandleConnection(NamedPipeServerStream pipe)
     {
-        using StreamReader reader = new(pipe, leaveOpen: true);
-        using StreamWriter writer = new(pipe, leaveOpen: true) { AutoFlush = true };
-
-        while (!_shutdown.IsCancellationRequested && pipe.IsConnected)
+        using (pipe)
         {
-            string? line = reader.ReadLine();
-            if (line is null)
+            try
             {
-                break;
-            }
+                using StreamReader reader = new(pipe, leaveOpen: true);
+                using StreamWriter writer = new(pipe, leaveOpen: true) { AutoFlush = true };
 
-            if (string.IsNullOrWhiteSpace(line))
+                while (!_shutdown.IsCancellationRequested && pipe.IsConnected)
+                {
+                    string? line = reader.ReadLine();
+                    if (line is null)
+                    {
+                        break;
+                    }
+
+                    if (string.IsNullOrWhiteSpace(line))
+                    {
+                        continue;
+                    }
+
+                    IpcResponse response = Dispatch(line);
+                    writer.WriteLine(IpcProtocol.Serialize(response));
+                }
+            }
+            catch (IOException ex)
             {
-                continue;
+                Log.Debug($"管道会话结束：{ex.Message}");
             }
-
-            IpcResponse response = Dispatch(line);
-            writer.WriteLine(IpcProtocol.Serialize(response));
+            catch (ObjectDisposedException)
+            {
+                // 另一方先撒手，正常。
+            }
+            catch (Exception ex)
+            {
+                Log.Error("处理管道会话时异常。", ex);
+            }
         }
     }
 

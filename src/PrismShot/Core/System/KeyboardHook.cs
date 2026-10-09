@@ -180,8 +180,17 @@ internal sealed class KeyboardHook : IDisposable
         KeyboardHookStruct data = Marshal.PtrToStructure<KeyboardHookStruct>(lParam);
 
         // 我们自己合成的按键不能再走一遍匹配，否则录像宏一发就自己把自己再触发一次。
-        if ((data.Flags & InjectedFlag) != 0)
+        bool injected = (data.Flags & InjectedFlag) != 0;
+        if (injected)
         {
+            // 但覆盖层开着的时候还是要让它看见一次：合成的 Esc 也该能取消。
+            // 关键区别是这里**不吞**（照常往下传）—— 录屏宏发的组合键必须能走到游戏里去，
+            // 吞掉就等于「按了录制没反应」。
+            if (_overlayKeys && isKeyDown)
+            {
+                ReportToOverlay(data.VirtualKeyCode);
+            }
+
             return Win32.CallNextHookEx(IntPtr.Zero, code, wParam, lParam);
         }
 
@@ -205,20 +214,7 @@ internal sealed class KeyboardHook : IDisposable
 
         if (_overlayKeys)
         {
-            uint virtualKey = data.VirtualKeyCode;
-            HotkeyModifiers modifiers = HotkeyBinding.ReadCurrentModifiers();
-            ThreadPool.QueueUserWorkItem(_ =>
-            {
-                try
-                {
-                    KeyObserved?.Invoke(virtualKey, modifiers);
-                }
-                catch (Exception ex)
-                {
-                    Log.Error("上报覆盖层按键失败。", ex);
-                }
-            });
-
+            ReportToOverlay(data.VirtualKeyCode);
             return 1;
         }
 
@@ -234,11 +230,12 @@ internal sealed class KeyboardHook : IDisposable
         }
 
         HotkeyBinding captured = hit;
+        Action<HotkeyBinding>? subscribers = Triggered;
         ThreadPool.QueueUserWorkItem(_ =>
         {
             try
             {
-                Triggered?.Invoke(captured);
+                subscribers?.Invoke(captured);
             }
             catch (Exception ex)
             {
@@ -247,6 +244,32 @@ internal sealed class KeyboardHook : IDisposable
         });
 
         return 1;
+    }
+
+    /// <summary>把一次按下原样告诉覆盖层。投到线程池上，绝不在钩子回调里做事。</summary>
+    private void ReportToOverlay(uint virtualKey)
+    {
+        // 先把委托抓成局部变量再投递。直接写 KeyObserved?.Invoke(...) 会踩到
+        // 「Collection was modified」—— 覆盖层关闭时会 -= 订阅者，
+        // 而这时可能已经有一次调用在别的线程上排队，两者撞上就抛。
+        Action<uint, HotkeyModifiers>? observer = KeyObserved;
+        if (observer is null)
+        {
+            return;
+        }
+
+        HotkeyModifiers modifiers = HotkeyBinding.ReadCurrentModifiers();
+        ThreadPool.QueueUserWorkItem(_ =>
+        {
+            try
+            {
+                observer(virtualKey, modifiers);
+            }
+            catch (Exception ex)
+            {
+                Log.Error("上报覆盖层按键失败。", ex);
+            }
+        });
     }
 
     private HotkeyBinding? Match(uint virtualKey)

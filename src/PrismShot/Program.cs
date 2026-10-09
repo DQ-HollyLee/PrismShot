@@ -8,6 +8,7 @@ using PrismShot.Core.Capture;
 using PrismShot.Core.Imaging;
 using PrismShot.Core.Interop;
 using PrismShot.Core.Ipc;
+using PrismShot.Core.Platform;
 using IoDirectory = System.IO.Directory;
 
 namespace PrismShot;
@@ -30,6 +31,10 @@ internal static class Program
     [STAThread]
     private static int Main(string[] args)
     {
+        // 必须抢在任何窗口、任何屏幕度量之前。理由见 DpiAwareness 的注释：
+        // 清单里的声明在纯命令行路径下实测不生效，差 1.25 倍就是一张缩小两成的虚拟桌面。
+        DpiAwareness.Enable();
+
         AppPaths.EnsureCreated();
         Log.Prune();
 
