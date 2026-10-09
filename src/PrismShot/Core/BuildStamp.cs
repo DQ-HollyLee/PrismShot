@@ -20,7 +20,7 @@ internal static class BuildStamp
     public const string Codename = "棱采";
 
     public static string Full =>
-        string.Equals(Channel, "stable", System.StringComparison.Ordinal)
+        string.Equals(Channel, "stable", global::System.StringComparison.Ordinal)
             ? Version
             : $"{Version}-{Channel}";
 }

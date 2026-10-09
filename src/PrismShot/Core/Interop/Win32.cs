@@ -41,6 +41,17 @@ internal struct Point32
 }
 
 [StructLayout(LayoutKind.Sequential)]
+internal struct MSG
+{
+    public IntPtr Window;
+    public uint Message;
+    public IntPtr WParam;
+    public IntPtr LParam;
+    public uint Time;
+    public Point32 Point;
+}
+
+[StructLayout(LayoutKind.Sequential)]
 internal struct KeyboardHookStruct
 {
     public uint VirtualKeyCode;
@@ -236,6 +247,21 @@ internal static partial class Win32
         out uint dpiX,
         out uint dpiY
     );
+
+    [DllImport("user32.dll")]
+    public static extern int GetMessage(out MSG message, IntPtr window, uint filterMin, uint filterMax);
+
+    [DllImport("user32.dll")]
+    public static extern bool TranslateMessage(ref MSG message);
+
+    [DllImport("user32.dll")]
+    public static extern IntPtr DispatchMessage(ref MSG message);
+
+    [DllImport("user32.dll", SetLastError = true)]
+    public static extern bool PostThreadMessage(uint threadId, uint message, IntPtr wParam, IntPtr lParam);
+
+    [DllImport("user32.dll")]
+    public static extern IntPtr GetMessageExtraInfo();
 
     /// <summary>取虚拟桌面的物理像素范围。四块显示器拼起来那张「大桌面」。</summary>
     public static Rect32 GetVirtualScreen()
