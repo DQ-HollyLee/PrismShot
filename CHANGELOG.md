@@ -4,6 +4,36 @@
 
 ## [Unreleased]
 
+### 修复：管理员常驻之后，所有走 IPC 的命令全部失效
+
+**症状**：`--elevate` 成功、任务管理器里也能截屏了，但从此
+`--quit` / `--reload` / `--screen` / `--region` 一律只回一句
+`error: Access to the path is denied.` —— 而热键截图照常工作，所以很容易隔很久才发现。
+
+**原因是完整性策略的 `NoWriteUp`**，不是权限没给够：管理员进程建出来的管道对象是
+High 完整性，普通权限的命令行连它既要读也要写，写访问被完整性检查直接挡下 ——
+这是系统有意为之的那道墙，绕过它本来就不该是选项。
+
+修法不是拆墙，而是**把管道对象的完整性标签压回 Medium**：`CreateNamedPipe` 时传入
+一份安全描述符，`D:` 允许当前用户完全控制、`S:` 里挂一条 `ML` ACE（Medium + NoWriteUp）。
+往下降标签不需要特权，往上抬才需要 —— 所以这既不用 UAC，也没有把门开给别的账户：
+管道里传的本来就是「截一张图」「重新读配置」这类用户自己发起的事。
+
+- 新增 `Core/Ipc/MediumLabelPipe.cs`。任何一步失败都**退回**原来的
+  `NamedPipeServerStream` 构造 —— 宁可退回「只有管理员命令行能用」，
+  也不能让管道整个起不来。这条回退被静默触发的话修复等于白做，
+  所以 `IpcTest` 里第一条断言就是「不许静默回退」
+- 客户端 catch 住 `UnauthorizedAccessException`，把那句谁也看不懂的
+  `Access to the path is denied.` 换成「常驻实例以管理员身份在跑，而这个命令行不是」
+
+**验证**（`.cache/ipctest`，链真实源码）：管道建起来了（未回退）、
+安全描述符读得回来、SACL 里有 `ML` ACE、**标签实测 `0x2000`（Medium）**、
+客户端连得上、消息往返 `pong`。
+Half of it 只能实机验证：High 服务端 + Medium 客户端真的被放行 ——
+本机受限环境起不了管理员进程，等使用者那边跑一次 `--quit` 才算数。
+
+## [0.1.0-alpha.15] - 2026-10-10
+
 ### 新增：`--uninstall`（干净卸载）
 
 直接把程序文件夹删掉是删不干净的：两条自启**都不在程序目录里** ——
@@ -127,6 +157,23 @@ Windows 根本不会去调用低完整性进程装的那根 `WH_KEYBOARD_LL` 低
 - 单实例互斥体加了等待：计划任务拉起新实例时，上一个实例往往正在退出、
   互斥体还没释放。现在会每 120ms 重试、最多等 6 秒，避免出现"两边都没实例"的空窗
 - 便携模式（`portable.txt`）不注册计划任务 —— 它本来就不该往系统里写东西
+
+**实机验证（2026-10-10 17:08，本机）**：在普通命令行跑 `PrismShot.exe --elevate`，
+弹了一次 UAC 批准后，日志连成一条完整证据链 ——
+
+```
+17:08:09 已移除注册表自启项（改由计划任务接管）
+17:08:10 PrismShot 0.1.0-alpha 启动（Installed，权限=管理员）      ← 此前一直是「权限=普通」
+17:08:10 开机自启由计划任务「PrismShot」负责（管理员身份）
+```
+
+随后在**任务管理器聚焦时按 `Win+Shift+S` 不再弹 Windows 原生截图**，由 PrismShot 接管 ——
+UIPI 这条判断得到证实：钩子不是被抢优先级，而是根本没被调用一次。
+读回 `C:\Windows\System32\Tasks\PrismShot`，落地的 XML 与上面设计完全一致
+（`HighestAvailable` / `InteractiveToken` / `PT0S` / `IgnoreNew` / `--from-task`）。
+
+**尚未验证**：注销或重启后是否仍以管理员静默起（不弹 UAC）。`LogonTrigger` 已配、
+`PT0S` 也防住了 72 小时那条，但要等下一次开机才算数。
 
 ### 新增：抓帧引擎可配置（`Behavior.CaptureEngine`）
 

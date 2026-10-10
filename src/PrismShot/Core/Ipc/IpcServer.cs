@@ -43,13 +43,17 @@ internal sealed class IpcServer : IDisposable
         {
             try
             {
-                NamedPipeServerStream pipe = new(
-                    IpcProtocol.PipeName,
-                    PipeDirection.InOut,
-                    maxNumberOfServerInstances: 4,
-                    PipeTransmissionMode.Message,
-                    PipeOptions.Asynchronous
-                );
+                // 管理员常驻时必须把管道的完整性标签压回 Medium，否则普通权限的命令行
+                // 连不上来（--quit / --reload / --screen 会全体失效）。见 MediumLabelPipe 的注释。
+                NamedPipeServerStream pipe =
+                    MediumLabelPipe.TryCreate(IpcProtocol.PipeName, maxInstances: 4)
+                    ?? new NamedPipeServerStream(
+                        IpcProtocol.PipeName,
+                        PipeDirection.InOut,
+                        maxNumberOfServerInstances: 4,
+                        PipeTransmissionMode.Message,
+                        PipeOptions.Asynchronous
+                    );
 
                 // WaitForConnectionAsync 对取消令牌的支持在 .NET 上是后来才补的，这里退一步用超时轮询，
                 // 换来的是「关程序时管道线程一定会醒过来」这件确定性的事。

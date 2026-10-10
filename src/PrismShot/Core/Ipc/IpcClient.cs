@@ -2,6 +2,7 @@ using System;
 using System.IO;
 using System.IO.Pipes;
 using System.Threading.Tasks;
+using PrismShot.Core.Platform;
 
 namespace PrismShot.Core.Ipc;
 
@@ -56,6 +57,19 @@ internal static class IpcClient
                 IpcProtocol.Options
             );
             return response ?? IpcResponse.Failed("应答无法解析。");
+        }
+        catch (UnauthorizedAccessException)
+        {
+            // 管理员实例 + 普通权限命令行：完整性策略直接挡下连接。
+            // 这句话必须自己说清楚，否则用户看到的是一句毫无指向的
+            // "Access to the path is denied."，然后只能猜。
+            return IpcResponse.Failed(
+                Elevation.IsTaskRegistered() && !Elevation.IsElevated
+                    ? "连不上常驻实例：它以管理员身份在跑，而这个命令行不是。"
+                        + "请用管理员身份重开一个命令行再执行；"
+                        + "或跑一次 PrismShot.exe --unelevate 退回普通权限常驻。"
+                    : "连不上常驻实例：权限不足。"
+            );
         }
         catch (TimeoutException)
         {
