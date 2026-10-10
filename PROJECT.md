@@ -2,6 +2,8 @@
 
 一个「像 Windows 自带截图工具一样不存在，但能正确截 HDR」的 Windows 截图小工具。
 
+**仓库**：https://github.com/DQ-HollyLee/PrismShot（远端 `origin`，主分支 `master`，发布走 Release + tag）
+
 ## 一句话定位
 
 **先是一个完整的、够好用的截图工具；HDR 正确只是它最硬的那张牌，而不是全部。**

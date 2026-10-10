@@ -2,6 +2,8 @@
 
 一个「像 Windows 自带截图工具一样不存在，但能在 HDR 屏上截出正确颜色」的 Windows 截图工具。
 
+**仓库**：https://github.com/DQ-HollyLee/PrismShot ｜ **下载最新版**：https://github.com/DQ-HollyLee/PrismShot/releases/latest
+
 MIT 协议。HDR 处理思路参考了 [Starshot](https://github.com/loliri/Starshot)（用 WGC 取浮点帧，
 而不是让 DWM 把 HDR 降级成 8bit SDR），低占用与可扩展的取向参考了
 [StarPie](https://github.com/Star-Pie/StarPie)。两者都是 MIT。

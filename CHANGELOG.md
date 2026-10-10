@@ -4,7 +4,10 @@
 
 ## [Unreleased]
 
-## [0.1.0-beta.1] - 2026-10-10
+## [0.1.0-beta.1] - 2026-10-10 · 已发布到 GitHub
+
+仓库：https://github.com/DQ-HollyLee/PrismShot ｜
+Release（含安装包与绿色版 zip）：https://github.com/DQ-HollyLee/PrismShot/releases/tag/v0.1.0-beta.1
 
 第一个 Beta。两件新东西：一个真正的安装程序，和一个能认字的 StarPie 插件。
 
