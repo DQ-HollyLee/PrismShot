@@ -12,7 +12,7 @@ internal static class BuildStamp
 {
     public const string Version = "0.1.0";
 
-    public const string Channel = "alpha";
+    public const string Channel = "beta";
 
     public const string DisplayName = "PrismShot";
 

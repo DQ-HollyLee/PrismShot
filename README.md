@@ -20,15 +20,28 @@ PrismShot 走的是另一条路：**WGC（Windows.Graphics.Capture）取 `R16G16
 
 ## 一分钟上手
 
-1. 下载发行包并解压到任意位置（建议 `%LOCALAPPDATA%\Programs\PrismShot`）
-2. 运行 `PrismShot.exe` —— 它不会弹任何窗口，只会把自己写进开机自启
+1. 下载 `PrismShot-<版本>-Setup.exe`，双击
+2. 装的过程中会**弹一次 UAC** —— 只有这一次。批准之后 PrismShot 以管理员常驻
 3. 从此按 **`Win+Shift+S`** 区域截图、**`PrintScreen`** 全屏截图
-4. **（建议）执行一次 `PrismShot.exe --elevate`** —— 弹一次 UAC，之后常驻在管理员权限下
 
-第 4 步不是可选项里的"高级玩法"，它修的是一个会稳定复现的问题：
+默认装到 `%LOCALAPPDATA%\Programs\PrismShot`（`--dir "<路径>"` 可改）。
+安装本身不需要管理员权限 —— 它的数据、配置、日志本来就在用户目录下，
+装到 Program Files 只会多换一次毫无必要的 UAC。
+
+第 2 步那次 UAC 不是"高级玩法"，它修的是一个会稳定复现的问题：
 **焦点在任务管理器上时按 `Win+Shift+S`，弹出来的是 Windows 原生截图工具，再按一次才好。**
 原因是 UIPI（用户界面特权隔离）—— 前台是管理员窗口时，系统根本不会去调用普通权限进程
 装的那根键盘钩子。以管理员常驻之后，任何前台窗口都拦不住它。详见下面「已知边界」。
+用 `--no-elevate` 装可以跳过它，代价就是上面那个问题照旧。
+
+**要卸载就用卸载程序**，别直接删文件夹：
+开始菜单 → `PrismShot` → `卸载 PrismShot`，或「设置 → 应用」里卸，
+或跑安装目录里的 `uninstall.exe`。开机自启有两条（注册表 `Run` 与计划任务），
+**都不在程序目录里** —— 直接删文件夹会留下两个引用着早已不存在的 exe 的死条目。
+`uninstall.exe --purge` 连配置与日志一起删；**截图目录永远不动**。
+
+只用压缩包也行：解压后运行 `PrismShot.exe`，它不会弹任何窗口，只会把自己写进开机自启。
+这条路上第 2 步要自己补一次 `PrismShot.exe --elevate`。
 
 它就这样消失在日常里了：没有托盘图标、没有任务栏按钮、没有主窗口。
 常驻的全部东西是一根监听两个热键的低级键盘钩子线程和一个命名管道服务端。
@@ -163,10 +176,13 @@ PrismShot.exe --version
 四个截图动作 + 一个「截图识字」。安装与参数说明见
 [plugin/StarPie.Plugin.PrismShot/README.md](plugin/StarPie.Plugin.PrismShot/README.md)。
 
-> 关于 OCR：插件**不做 OCR**。当前 StarPie SDK 没有开放「识别一张已有图片」的入口，
-> 于是 `captureOcr` 会保存选区图并返回一句清楚的提示（而不是假装成功）。
-> 上游实现 `IHostOcrService` 之后插件无需改代码即可生效，提案见
-> [upstream/ocr-seam.md](plugin/StarPie.Plugin.PrismShot/upstream/ocr-seam.md)。
+> 关于 OCR：**框选归 PrismShot，认字归 StarPie。**
+> 插件把宿主的 `OcrManager` 整段照搬了进来（四个引擎：本地离线 / AI 视觉 / 自定义 HTTP / 云端），
+> 配置直接读 StarPie 自己的 `config.json` —— 你在 StarPie 里选的引擎和填的 Key，
+> 插件用的是同一份，不用再配一遍。被换掉的只有「框选」那一半。
+> 本机实测：AI 视觉 + DeepSeek，`875×375` 的选区认出 347 字。
+> 宿主若补上 `IHostOcrService` 接缝，插件无需重新编译就会改走宿主的引擎，
+> 提案见 [upstream/ocr-seam.md](plugin/StarPie.Plugin.PrismShot/upstream/ocr-seam.md)。
 
 ## 自己编译
 
@@ -174,9 +190,14 @@ PrismShot.exe --version
 # 一次性：拉一套隔离的 .NET 8 SDK 到 ~/.uba-dotnet（不污染系统）
 ./build.ps1 -BootstrapSdk
 
-./build.ps1            # 编译主程序 + 插件，产物进 artifacts/
+./build.ps1            # 编译主程序 + 插件 + 安装程序，产物进 artifacts/
 ./build.ps1 -Run       # 编译后立刻启动，验证钩子有没有接管热键
 ```
+
+产物三样：`artifacts/PrismShot-<版本>/`（解压即用）、同名的 `.zip`、
+以及 `artifacts/PrismShot-<版本>-Setup.exe`（单文件安装程序，内容嵌在里面）。
+安装程序必须走 `build.ps1` —— 它的程序内容是构建时打进 exe 的，
+直接 `dotnet build` 那个工程只会得到一个装不出东西的空壳。
 
 SDK 8.0 以上、Windows SDK 契约 `10.0.22621`（编译期用，不影响运行在哪版 Windows），
 运行时不需要任何第三方本机 dll —— 只用系统自带的 `d3d11.dll` / `user32.dll` / `gdi32.dll`。

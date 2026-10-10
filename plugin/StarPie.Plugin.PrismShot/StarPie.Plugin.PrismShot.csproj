@@ -1,10 +1,25 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <TargetFramework>net8.0-windows</TargetFramework>
+    <!--
+      为什么从 net8.0-windows 抬到 net8.0-windows10.0.19041.0：
+      照搬过来的 OCR 源码要用到两样东西 —— System.Drawing.Bitmap（识别前的图像预处理全在它上面）
+      与 Windows.Media.Ocr 的 WinRT 投影（本地离线引擎）。前者只在 Microsoft.WindowsDesktop.App
+      里，后者要求 TFM 带平台版本号，net8.0-windows（无版本号）两者都拿不到。
+
+      抬到 19041 而不是更高，是因为宿主自己的 TFM 就是 19041，而宿主的插件闸门判定的是
+      「插件 TFM 不得高于宿主」（TargetFrameworkInfo.IsCompatible：平台版本 p <= h）。
+      持平通过，高一点就被拒载 —— 所以这里不是「尽量新」，而是「恰好等于宿主」。
+    -->
+    <TargetFramework>net8.0-windows10.0.19041.0</TargetFramework>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <LangVersion>12.0</LangVersion>
+
+    <!-- 只为拿到 System.Drawing.Common：它属于 Microsoft.WindowsDesktop.App 共享框架，
+         用 FrameworkReference 而不是 NuGet 包，产物目录里就不会多出一份 System.Drawing.dll。 -->
+    <UseWindowsForms>true</UseWindowsForms>
+    <DisableWinExeOutputInference>true</DisableWinExeOutputInference>
 
     <AssemblyName>StarPie.Plugin.PrismShot</AssemblyName>
     <RootNamespace>StarPie.Plugin.PrismShot</RootNamespace>
@@ -41,7 +56,7 @@
   <ItemGroup>
     <AssemblyMetadata Include="StarPiePluginId" Value="dev.prismshot.starpie" />
     <AssemblyMetadata Include="StarPiePluginName" Value="PrismShot HDR 截图" />
-    <AssemblyMetadata Include="StarPiePluginCapabilities" Value="Process;FileSystem;Clipboard;ScreenCapture" />
+    <AssemblyMetadata Include="StarPiePluginCapabilities" Value="Process;FileSystem;Network;Clipboard;ScreenCapture" />
     <AssemblyMetadata Include="StarPiePluginLicense" Value="MIT" />
     <AssemblyMetadata Include="StarPiePluginHomepage" Value="https://github.com/prismshot/PrismShot" />
   </ItemGroup>

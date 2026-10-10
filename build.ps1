@@ -1,6 +1,6 @@
 ﻿<#
 .SYNOPSIS
-    PrismShot 的构建脚本。编译主程序与 StarPie 插件，并把发行包排到 artifacts\ 下面。
+    PrismShot 的构建脚本。编译主程序、StarPie 插件与安装程序，并把发行包排到 artifacts\ 下面。
 
 .DESCRIPTION
     刻意不用全局安装的 dotnet：脚本优先用 $<HOME>\.uba-dotnet 里那套隔离 SDK，
@@ -54,6 +54,16 @@ function Read-Version {
     if (-not $json.version) { throw "version.json 里没有 version 字段。" }
 
     return $json.version
+}
+
+# 通道（alpha / beta / stable）。不并进 $version 是因为版本号只该有数字，
+# 而文件名与「关于」里都得能一眼看出这是哪一条通道的产物。
+function Read-Channel {
+    $file = Join-Path $root 'version.json'
+    $json = Get-Content $file -Raw | ConvertFrom-Json
+    if (-not $json.channel) { throw "version.json 里没有 channel 字段。" }
+
+    return $json.channel
 }
 
 # ---------------------------------------------------------------- SDK
@@ -128,7 +138,8 @@ $dotnet = Resolve-Dotnet
 Write-Host "dotnet: $dotnet" -ForegroundColor DarkGray
 
 $version = Read-Version
-Write-Host "版本: $version" -ForegroundColor DarkGray
+$channel = Read-Channel
+Write-Host "版本: $version ($channel)" -ForegroundColor DarkGray
 
 $appProject = Join-Path $root 'src/PrismShot/PrismShot.csproj'
 $pluginProject = Join-Path $root 'plugin/StarPie.Plugin.PrismShot/StarPie.Plugin.PrismShot.csproj'
@@ -173,11 +184,27 @@ if ([System.IO.Directory]::Exists($stage)) {
         [System.IO.Directory]::Delete($stage, $true)
     }
     catch {
-        throw @"
-清不掉上一版产物：$stage
-$($_.Exception.Message)
-多半仍有 PrismShot 在跑（它锁着目录里的 dll）。先执行 PrismShot.exe --quit 再构建。
-"@
+        # 删不掉就改名让开，而不是让构建失败。
+        # 在装了 PrismShot 的机器上构建一定会撞上这一下：它有计划任务、开机自启、
+        # 还有上一次构建留下的进程，目录句柄不会老老实实等你。而 Windows 允许给被占用的
+        # 目录改名 —— 名字一换，原来的目录就没了，新的可以照常建。
+        # 硬失败在这里没有任何收益：构建脚本的职责是产出这一版，不是替用户做进程管理。
+        $orphanRoot = Join-Path $root '.cache/superseded'
+        $orphan = Join-Path $orphanRoot ("PrismShot-" + (Get-Date -Format 'yyyyMMdd-HHmmss'))
+        [System.IO.Directory]::CreateDirectory($orphanRoot) | Out-Null
+
+        try {
+            [System.IO.Directory]::Move($stage, $orphan)
+            Write-Host "  上一版产物被占用，已改名让开：$orphan" -ForegroundColor DarkGray
+            Write-Host "  （它是构建中间物，随时可以整个删掉 .cache\superseded）" -ForegroundColor DarkGray
+        }
+        catch {
+            # 连改名都不行时，最后一条路是「直接覆盖」：目录对象被占着，
+            # 但往里写文件仍然可以（上面的删除其实已经把大部分旧文件清掉了）。
+            # 代价只是旧版里多出来的文件不会被清理 —— 那不值得让构建停在这里。
+            Write-Host "  !! 上一版产物删不掉也改不动名（被占用），将直接覆盖。" -ForegroundColor Yellow
+            Write-Host "     $($_.Exception.Message)" -ForegroundColor DarkGray
+        }
     }
 }
 
@@ -204,6 +231,35 @@ Write-Host ""
 Write-Host "发行包：$stage" -ForegroundColor Green
 Get-ChildItem $appDir -File | Select-Object -First 6 -ExpandProperty Name |
     ForEach-Object { Write-Host "  $_" -ForegroundColor DarkGray }
+
+# ---- 安装程序 ----
+
+# payload.zip 里装的正是上面刚排好的那一整个发行包目录：安装器把它嵌进自己的 exe，
+# 于是分发的是「一个 exe」，而不是「一个 exe 加一个文件夹」——
+# 后者迟早会被人只拷走 exe，然后得到一个装不出东西的安装器。
+$setupProject = Join-Path $root 'src/PrismShot.Setup/PrismShot.Setup.csproj'
+$payloadDir = Join-Path $root 'src/PrismShot.Setup/payload'
+$payloadZip = Join-Path $payloadDir 'payload.zip'
+
+Write-Host "→ 打包安装程序内容（$(Split-Path $stage -Leaf)）" -ForegroundColor Cyan
+if ([System.IO.Directory]::Exists($payloadDir)) { [System.IO.Directory]::Delete($payloadDir, $true) }
+[System.IO.Directory]::CreateDirectory($payloadDir) | Out-Null
+Compress-Archive -Path (Join-Path $stage '*') -DestinationPath $payloadZip -CompressionLevel Optimal
+
+Write-Host "→ publish 安装程序" -ForegroundColor Cyan
+$setupStage = Join-Path $root 'artifacts/setup'
+if ([System.IO.Directory]::Exists($setupStage)) { [System.IO.Directory]::Delete($setupStage, $true) }
+& $dotnet publish $setupProject -c $Configuration -p:Platform=x64 -o $setupStage -v minimal
+if ($LASTEXITCODE -ne 0) { throw "安装程序 publish 失败（exit $LASTEXITCODE）。" }
+
+$setupExe = Join-Path $setupStage 'PrismShot.Setup.exe'
+if (-not (Test-Path $setupExe)) { throw "publish 之后找不到 $setupExe。" }
+
+$setupFinal = Join-Path $root "artifacts/PrismShot-$version-$channel-Setup.exe"
+if (Test-Path $setupFinal) { [System.IO.File]::Delete($setupFinal) }
+Copy-Item $setupExe $setupFinal -Force
+$sizeMb = [math]::Round((Get-Item $setupFinal).Length / 1MB, 1)
+Write-Host "安装程序：$setupFinal（${sizeMb} MB，单文件）" -ForegroundColor Green
 
 # ---- 可选：跑一下 ----
 

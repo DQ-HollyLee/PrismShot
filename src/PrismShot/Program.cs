@@ -345,7 +345,9 @@ internal static class Program
 
     private static int Version()
     {
-        Console.WriteLine($"PrismShot {BuildStamp.Version}");
+        // Full 而不是 Version：只报 0.1.0 就看不出这是 alpha 还是 beta，
+        // 而「我装的到底是哪个版本」恰恰是排障时第一个要问的问题。
+        Console.WriteLine($"PrismShot {BuildStamp.Full}");
         return 0;
     }
 

@@ -57,23 +57,34 @@ StarPie 用一个「目录 + `plugin.json`」认插件：目录里只要有这�
 
 ## 关于「截图识字」
 
-这是唯一一个可能**明确失败**的动作，原因值得说明白。
+分工是：**PrismShot 负责框选，StarPie 负责认字。**
 
-需求要的是「用 PrismShot 完成选区，让 StarPie 认这段区域里的字」。
-而当前 StarPie SDK 对外部开放的 OCR 入口只有 `IHostScreenCaptureService.CaptureAndRecognize()` ——
-它会**再弹一次 StarPie 自己的框选窗口**，也就是说用户要框两次，一次给 PrismShot、一次给 StarPie。
-这显然不是需求要的样子。
+宿主 SDK 对外开放的 OCR 入口只有一个 `IHostScreenCaptureService.CaptureAndRecognize()`，
+它会**再弹一次 StarPie 自己的框选窗口** —— 用户得框两次，第一次框的结果直接被丢掉。
+这不是能凑合的取舍，是明显的缺陷。
 
-真正需要的是「拿一张图、返回文字」这种形态的入口，它不在已发布的契约里。
-于是这个动作采取的策略是：**按约定去试，试不到就说实话**。
+于是插件把 OCR 那一整段**照搬**了进来：`upstream/OcrManager.cs` 与 StarPie 的
+`WinPieGestures/OcrManager.cs` 逐行同源，改动只有三处，且都是为了"离开宿主还能活"：
 
-- 宿主未来若实现了 `IHostOcrService`（提案见 [upstream/ocr-seam.md](upstream/ocr-seam.md)），
-  插件**无需重新编译**就能直接认出并用上 —— 那一侧是反射探测，不是编译期引用
-- 现在没有时，动作会把选区图保存下来，并返回一条清楚的提示，而不是假装成功
-- 保存下来的图可以用 StarPie 自带的「截屏识字」打开识别，链路不断，只是多了半步手工
+| 上游写的是 | 插件换成 | 为什么必须是它 |
+| --- | --- | --- |
+| `ConfigManager.CurrentConfig.OcrConfig` | 读 `%LOCALAPPDATA%\StarPie\config.json` | 宿主内部类型不可引用；读盘反而保证了**与宿主同一份配置** —— 用户在 StarPie 里改引擎，插件立刻跟着变 |
+| `AppLogger.LogXxx` | `OcrLog`（绑到插件日志） | 同上 |
+| `I18n.T(...)` | 字面中文 | 插件拿不到宿主的词条表 |
 
-刻意**不做**的事：不写一个自己认为"大概能用"的替代 OCR 实现进去。
-OCR 是 StarPie 的强项，插件重复实现它只会得到一份更差的结果，还把版本号绕晕。
+被**删掉**的只有两处，正是"框选"这一半：`ShowSettingsDialog` 与
+`StartCaptureAndRecognize`（后者会弹宿主的 `ScreenSnipWindow`）—— 它们的位置由 PrismShot 顶上。
+识别本体一个字没动：四个引擎（本地离线 / AI 视觉 / 自定义 HTTP / 云端）、
+几何重排、文案后处理、识别前的图像预处理全在。
+
+配置完全跟着宿主走。本机实测：StarPie 里配的是 `Provider=Ai` + DeepSeek 视觉模型，
+插件读同一个 `config.json`，动作跑起来日志就是
+`engine='🤖 AI 视觉大模型 (deepseek-v4-flash-vision-exp)'`。
+**用户不需要在插件里再配一遍密钥。**
+
+宿主若哪天把 `IHostOcrService` 补进 SDK（提案见 [upstream/ocr-seam.md](upstream/ocr-seam.md)），
+插件**无需重新编译**就会改走宿主的引擎 —— 那一侧是反射探测。
+重复实现永远不如唯一真相，照搬的那份本来就只是代班。
 
 ## 已知边界
 

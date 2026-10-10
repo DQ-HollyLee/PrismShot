@@ -1,0 +1,58 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <!--
+      为什么是 net8.0-windows 而<b>不带</b>平台版本号（主程序带，是 10.0.22621.0）：
+      带版本号就会把 WinRT 投影程序集 Microsoft.Windows.SDK.NET.dll（约 25 MB）一起打进产物。
+      主程序需要它 —— WGC 抓帧和 HDR 探测走的都是 WinRT。安装器一个 WinRT API 都不碰，
+      它只要注册表，而 Microsoft.Win32.Registry 属于 Microsoft.NETCore.App，不需要版本号。
+      实测差得很直白：带版本号的安装器 32.8 MB，去掉之后 7.5 MB。
+    -->
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <RootNamespace>PrismShot.Setup</RootNamespace>
+    <AssemblyName>PrismShot.Setup</AssemblyName>
+
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <LangVersion>12.0</LangVersion>
+    <Platforms>x64</Platforms>
+    <PlatformTarget>x64</PlatformTarget>
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+    <SelfContained>false</SelfContained>
+
+    <!--
+      单文件：安装器必须是「一个 exe，双击就装」。
+       payload.zip 作为嵌入资源被一起打进去，所以产物里不会出现第二个文件 ——
+       一旦出现第二个文件，用户就会只拷走 exe，然后得到一个装不出东西的安装器。
+    -->
+    <PublishSingleFile>true</PublishSingleFile>
+    <IncludeNativeLibrariesForSelfExtract>false</IncludeNativeLibrariesForSelfExtract>
+    <!--
+      不开 EnableCompressionInSingleFile：它只对「自包含」发布有效，而这里是依赖框架的，
+      开了直接报 NETSDK1176。也用不着它 —— 体积主体是嵌进来的 payload.zip，
+      它自己已经是 deflate 过的，再压一层 exe 几乎压不动，还平白拖慢启动。
+      自包含能让安装器在没有 .NET 8 的机器上也能跑，但那要多出约 60 MB
+      而 PrismShot 自己本来就要 .NET 8，装了运行时却装不了程序的情况并不存在。
+    -->
+    <DebugType>none</DebugType>
+
+    <Version>0.1.0</Version>
+    <AssemblyVersion>0.1.0.0</AssemblyVersion>
+    <FileVersion>0.1.0.0</FileVersion>
+    <Company>PrismShot</Company>
+    <Product>PrismShot</Product>
+    <Copyright>Copyright (c) 2026 PrismShot contributors</Copyright>
+    <SatelliteResourceLanguages>zh-Hans;en</SatelliteResourceLanguages>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!--
+      程序内容由 build.ps1 打进 payload/payload.zip 再嵌进来。
+      仓库里不存这个 zip（见 .gitignore）：它是产物，存进去就会和源码一起过期。
+      LogicalName 写死成 payload.zip，免得按目录结构推出来的名字将来挪个目录就对不上。
+    -->
+    <EmbeddedResource Include="payload\payload.zip" LogicalName="payload.zip" Condition="Exists('payload\payload.zip')" />
+  </ItemGroup>
+
+</Project>

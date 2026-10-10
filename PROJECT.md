@@ -34,7 +34,7 @@ hdrshot-screenshot/
 ├── build.ps1                 # 编译、产出发行包
 ├── src/
 │   ├── PrismShot.sln
-│   └── PrismShot/            # 主程序（.NET 8 WPF + WinRT 投影）
+│   ├── PrismShot/            # 主程序（.NET 8 WPF + WinRT 投影）
 │       ├── Assets/           # 图标
 │       ├── Core/             # 与 UI 无关的引擎层
 │       │   ├── Capture/      # WGC 抓帧、监视器 HDR 探测、GDI 兜底、引擎选择
@@ -46,11 +46,13 @@ hdrshot-screenshot/
 │       │   ├── System/       # 热键、自启 / 提权、剪贴板、模拟按键
 │       │   └── MemoryPressure.cs  # LOH 压缩式回收（唯一能把内存真正还回去的入口）
 │       └── Ui/               # 覆盖层、工具栏、缩略图提示
+│   └── PrismShot.Setup/      # 安装 / 卸载程序（单文件；装完在目录里留下 uninstall.exe）
+│       └── payload/          # build.ps1 打进 exe 的程序内容（产物，被 .gitignore 忽略）
 ├── plugin/
 │   └── StarPie.Plugin.PrismShot/   # 给 StarPie 轮盘用的插件
 │       ├── plugin.json             # 宿主清单（必须与 DLL 一起分发）
 │       ├── README.md               # 安装与参数
-│       └── upstream/               # 给 StarPie 上游的提案（OCR 接缝）
+│       └── upstream/               # 照搬的宿主 OCR 源码 + 给上游的接缝提案
 ├── docs/                     # 设计说明、排障手册
 ├── reference/                # 参考仓库克隆（被 .gitignore 忽略，不入版本库）
 │   ├── Starshot/

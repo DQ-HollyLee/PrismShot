@@ -23,6 +23,10 @@ public sealed class PrismShotPlugin : IStarPiePlugin
     {
         ArgumentNullException.ThrowIfNull(context);
 
+        // 照搬过来的 OCR 源码里写的是宿主的 AppLogger，插件里由 OcrLog 顶替。
+        // 必须在任何动作注册之前绑好：识别随时可能被触发，而没绑时那些日志会全部丢掉。
+        OcrLog.Bind(context.Log);
+
         _registrations.Add(context.Actions.Register(new CaptureShotAction(context, ShotMode.Region)));
         _registrations.Add(context.Actions.Register(new CaptureShotAction(context, ShotMode.Freeform)));
         _registrations.Add(context.Actions.Register(new CaptureShotAction(context, ShotMode.Window)));

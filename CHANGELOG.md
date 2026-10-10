@@ -4,6 +4,90 @@
 
 ## [Unreleased]
 
+## [0.1.0-beta.1] - 2026-10-10
+
+第一个 Beta。两件新东西：一个真正的安装程序，和一个能认字的 StarPie 插件。
+
+### 新增：安装程序
+
+`artifacts/PrismShot-<version>-Setup.exe`，单文件，程序内容嵌在里面 ——
+分发的是一个 exe，不是「一个 exe 加一个文件夹」。后者迟早会被人只拷走 exe，
+然后得到一个装不出东西的安装器。
+
+- 默认装到 `%LOCALAPPDATA%\Programs\PrismShot`（`--dir` 可改）。
+  **每用户**安装，装的过程不需要管理员权限：它的数据、配置、日志本来就在用户目录下，
+  装到 Program Files 只会换来一次毫无必要的 UAC。它真正需要提权的地方是
+  「热键要在管理员窗口上生效」，那走 `--elevate`，且只需要弹一次
+- **安装目录里留下 `uninstall.exe`** —— 就是安装程序自己换了个名字
+- 同时在 `HKCU\...\Uninstall\PrismShot` 登记，于是「设置 → 应用」里能看见、能卸载
+- 开始菜单建两项：`PrismShot` 与 `卸载 PrismShot`
+- 装完默认跑一次 `--elevate`（弹一次 UAC），`--no-elevate` 可跳过
+
+卸载这条路径是照着「删不干净」那次事故写的，顺序不能反：
+
+1. 先让常驻实例自己撤掉两条自启（注册表 Run 与计划任务）并退出 ——
+   它还活着的话，下一次启动自检会把自启原样写回去
+2. 再删开始菜单、卸载登记、安装目录
+3. `--purge` 才删配置与日志；**截图目录永远不动**
+4. `uninstall.exe` 删不掉正在运行的自己，所以往临时目录放一个自删脚本，
+   等这个进程结束再清掉整个目录。只有确认「自己就是装在这个目录里的
+   `uninstall.exe`」时才做 —— 万一有人把它拷到别处双击，绝不能顺手删掉那个目录
+
+**为什么自己写而不是引 Inno Setup / NSIS**：那两家都是好东西，但它们是构建机上的
+外部依赖，而本项目要求「拿到仓库就能构建」。安装器只做四件很确定的事 ——
+解包、写卸载项、建快捷方式、叫起程序 —— 自己写比引第三方更可控。
+快捷方式走 `WScript.Shell` 后期绑定而不是手写 `IShellLinkW` 的 COM 声明：
+后者要求把 vtable 上 18 个方法按序一字不差排出来，排错一个就是内存损坏，
+而且在本机上根本试不出来。
+
+体积上踩了一个坑值得记：装了带平台版本号的 TFM（`net8.0-windows10.0.19041.0`）
+会把 WinRT 投影程序集 `Microsoft.Windows.SDK.NET.dll`（约 25 MB）一起打进产物。
+主程序需要它（WGC 抓帧与 HDR 探测走 WinRT），安装器一个 WinRT API 都不碰。
+改用不带版本号的 `net8.0-windows` 之后 **32.8 MB → 7.4 MB**；
+`Microsoft.Win32.Registry` 属于 `Microsoft.NETCore.App`，不需要版本号。
+
+### 新增：StarPie 插件支持 AI OCR
+
+需求是「用 PrismShot 完成选区，让 StarPie 认这段区域里的字」。
+宿主 SDK 只开放了 `CaptureAndRecognize()`，它会**再弹一次自己的框选窗口**，
+用户得框两次、第一次的结果直接被丢掉 —— 这不是取舍，是缺陷。
+
+于是把 OCR 那一整段**照搬**进来：`plugin/.../upstream/OcrManager.cs` 与 StarPie 的
+`WinPieGestures/OcrManager.cs` 逐行同源。改动只有三处，且都是为了「离开宿主还能活」：
+
+| 上游写的是 | 插件换成 | 为什么必须是它 |
+| --- | --- | --- |
+| `ConfigManager.CurrentConfig.OcrConfig` | 读 `%LOCALAPPDATA%\StarPie\config.json` | 宿主内部类型不可引用；读盘反而保证了**与宿主同一份配置** |
+| `AppLogger.LogXxx` | `OcrLog`（绑到插件日志） | 同上 |
+| `I18n.T(...)` | 字面中文 | 插件拿不到宿主的词条表 |
+
+被删掉的只有两处，正是「框选」这一半：`ShowSettingsDialog` 与
+`StartCaptureAndRecognize`（后者会弹宿主的 `ScreenSnipWindow`）—— 它们的位置由 PrismShot 顶上。
+识别本体一个字没动：四个引擎（本地离线 / AI 视觉 / 自定义 HTTP / 云端）、
+几何重排、文案后处理、识别前的图像预处理全在。
+
+- 插件 TFM 抬到 `net8.0-windows10.0.19041.0`：照搬的源码要用 `System.Drawing.Bitmap`
+  与 `Windows.Media.Ocr` 的 WinRT 投影，两者都要求带平台版本号。
+  宿主自己的 TFM 就是 19041，而插件闸门判定的是「插件不高于宿主」——
+  持平通过，高一点就被拒载，所以这里是「恰好等于」而不是「尽量新」
+- 清单补了 `Network` 能力：AI 与自定义 HTTP 引擎要真的发请求，
+  声明了才诚实，也才可能被宿主的权限模型放行
+- **实测**（`.cache/plugincheck`，链真实源码 + 真实宿主配置）：
+  引擎 `Ai` / DeepSeek 视觉模型，`875×375` 的选区认出 347 字，2.6 秒，
+  结果进了剪贴板。用户不需要在插件里再配一遍密钥
+- 宿主若哪天把 `IHostOcrService` 补进 SDK（提案见 `upstream/ocr-seam.md`），
+  插件**无需重新编译**就会改走宿主的引擎。重复实现永远不如唯一真相，
+  照搬的那份本来就只是代班
+
+### 顺带修：构建脚本不再因为产物目录被占用而失败
+
+在装了 PrismShot 的机器上构建一定会撞上这一下：目录里有句柄，
+`Directory.Delete` 直接抛，于是整个构建停住。现在三级降级：
+**删 → 改名让开 → 直接覆盖**。硬失败在这里毫无收益 ——
+构建脚本的职责是产出这一版，不是替用户做进程管理。
+
+## [0.1.0-alpha.17] - 2026-10-10
+
 ### 改进：`--reload` 不再回一句「ok 0x0」
 
 `--reload` 的应答是 `{ Ok = true }` —— 没有尺寸、没有路径，因为它本来就没有产物。

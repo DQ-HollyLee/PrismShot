@@ -21,3 +21,6 @@ publish/
 
 # 构建脚本自己拉的 dotnet SDK
 .dotnet/
+
+# 安装程序的内容包：build.ps1 把发行目录打成 zip 再嵌进 exe，是产物不是源码
+src/PrismShot.Setup/payload/
