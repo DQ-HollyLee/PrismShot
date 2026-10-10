@@ -178,6 +178,11 @@ PrismShot.exe --version
 四个截图动作 + 一个「截图识字」。安装与参数说明见
 [plugin/StarPie.Plugin.PrismShot/README.md](plugin/StarPie.Plugin.PrismShot/README.md)。
 
+不想自己编译就取 Release 里的 `StarPie.Plugin.PrismShot-<版本>.zip`（约 42 KB，里面就是
+`StarPie.Plugin.PrismShot.dll` + `plugin.json`）：
+https://github.com/DQ-HollyLee/PrismShot/releases/latest
+解压到 `%LOCALAPPDATA%\StarPie\plugin-data\` 下任意一个子目录，重启 StarPie 即可。
+
 > 关于 OCR：**框选归 PrismShot，认字归 StarPie。**
 > 插件把宿主的 `OcrManager` 整段照搬了进来（四个引擎：本地离线 / AI 视觉 / 自定义 HTTP / 云端），
 > 配置直接读 StarPie 自己的 `config.json` —— 你在 StarPie 里选的引擎和填的 Key，

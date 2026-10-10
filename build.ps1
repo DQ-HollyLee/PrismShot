@@ -113,10 +113,23 @@ function Invoke-Build {
 function Copy-PluginOutput {
     param([string] $Target)
 
-    $built = Join-Path $root 'plugin/StarPie.Plugin.PrismShot/bin/x64'
-    $built = Join-Path $built "$Configuration/net8.0-windows"
+    # TFM 不许写死。插件的 TargetFramework 是跟着宿主 SDK 走的（一度是 net8.0-windows，
+    # 后来为对齐宿主改到 net8.0-windows10.0.19041.0）。写死的后果不是报错，而是**静默**把
+    # 上一次构建遗留在旧目录里的 dll 当成这一版的产物带出去 —— 发行包看着一切正常，
+    # 里面装的却是几小时前的插件，而旧目录不会有人去清理。所以从 csproj 里读。
+    $csproj = Join-Path $root 'plugin/StarPie.Plugin.PrismShot/StarPie.Plugin.PrismShot.csproj'
+    $tfm = ([regex]::Match((Get-Content $csproj -Raw),
+        '<TargetFramework>\s*(.+?)\s*</TargetFramework>')).Groups[1].Value
+    if (-not $tfm) { throw "读不出插件的 TargetFramework：$csproj" }
 
-    if (-not (Test-Path $built)) { throw "插件产物目录不存在：$built" }
+    $built = Join-Path $root "plugin/StarPie.Plugin.PrismShot/bin/x64/$Configuration/$tfm"
+
+    if (-not (Test-Path $built)) {
+        # 对不上就报出来。退回「别的目录里有 dll 就行」等于把上面这个坑重新埋回去。
+        $siblings = Get-ChildItem -Path (Join-Path $root "plugin/StarPie.Plugin.PrismShot/bin/x64/$Configuration") `
+            -Directory -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Name
+        throw "插件产物目录不存在：$built（bin 下实际有：$($siblings -join ', ')）"
+    }
 
     # 契约程序集 StarPie.Plugin.Abstractions.dll 由宿主提供，
     # 打包时带出去会被宿主判为「自带的 SDK 副本版本不一致」而直接拒绝加载。

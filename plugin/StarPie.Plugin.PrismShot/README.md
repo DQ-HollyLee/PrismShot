@@ -18,7 +18,11 @@
 StarPie 用一个「目录 + `plugin.json`」认插件：目录里只要有这两样东西，
 它就会在启动时被扫瞄发现。所以安装就是拷两个文件：
 
-1. 编译：`dotnet build -c Release -p:Platform=x64`（或直接取发行包里的 `plugin` 目录）
+1. 取文件：直接下载 Release 里的 `StarPie.Plugin.PrismShot-<版本>.zip`
+   （https://github.com/DQ-HollyLee/PrismShot/releases/latest，里面就是 dll + `plugin.json`）；
+   要自己编译就 `dotnet build -c Release -p:Platform=x64`，产物在
+   `bin/x64/Release/<TargetFramework>/`（当前是 `net8.0-windows10.0.19041.0`，
+   **不是** `net8.0-windows` —— 后者是改 TFM 之前的旧目录，里面那份 dll 是过期的）
 2. 在 `%LOCALAPPDATA%\StarPie\plugin-data\` 下建一个子目录，目录名随意，例如 `prismshot`
 3. 把 `StarPie.Plugin.PrismShot.dll` 和 `plugin.json` 拷进它（**不要**带 `StarPie.Plugin.Abstractions.dll`，
    契约程序集由宿主统一提供，多带一份会被判为版本冲突；`deps.json` / `pdb` 也不必拷）

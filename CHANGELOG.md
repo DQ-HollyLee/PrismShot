@@ -89,6 +89,23 @@ Release（含安装包与绿色版 zip）：https://github.com/DQ-HollyLee/Prism
 **删 → 改名让开 → 直接覆盖**。硬失败在这里毫无收益 ——
 构建脚本的职责是产出这一版，不是替用户做进程管理。
 
+### 修复：发行包里的插件 dll 是几个小时前的旧版（2026-10-10 19:40，发布后补）
+
+`Copy-PluginOutput` 把产物目录写死成了 `bin/x64/Release/net8.0-windows`。
+插件的 TFM 后来为对齐宿主改成了 `net8.0-windows10.0.19041.0` ——
+于是**每次打包都是从改 TFM 之前那个旧目录里取 dll**，而旧目录没人会去清，
+它安静地躺在那里，构建脚本每次都顺利地把它当成"这一版的产物"带出去。
+表现不是报错，是 beta.1 的 zip 与安装程序里装着一个 17:40 的插件
+（32256 字节，缺最后那批改动），而真正的新产物（83456 字节）一直躺在另一个目录里。
+
+- 改法：TFM 从 csproj 里读，读不到就报；目录对不上也报，
+  **绝不退回"别的目录里有 dll 就行"** —— 那等于把这个坑重新埋回去
+- 已重出 `PrismShot-0.1.0-beta.1.zip` / `-Setup.exe` 并替换 Release 上的同名资产
+- 额外提供 `StarPie.Plugin.PrismShot-0.1.0-beta.1.zip`（42 KB，dll + `plugin.json`），
+  装 StarPie 的人不必为了一个插件去翻整个发行包
+- 本机 `%LOCALAPPDATA%\StarPie\plugin-data\dev.prismshot.starpie\` 已同步换成新 dll，
+  重启 StarPie 生效
+
 ## [0.1.0-alpha.17] - 2026-10-10
 
 ### 改进：`--reload` 不再回一句「ok 0x0」
