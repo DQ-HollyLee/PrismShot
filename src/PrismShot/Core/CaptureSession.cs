@@ -97,6 +97,7 @@ internal sealed class CaptureSession : IDisposable
         {
             ScreenGrabber grabber =
                 _grabber ??= new ScreenGrabber(
+                    CaptureEngines.Parse(_settings.Behavior.CaptureEngine),
                     TimeSpan.FromSeconds(_settings.Behavior.PerDisplayTimeoutSeconds)
                 );
 
@@ -414,6 +415,7 @@ internal sealed class CaptureSession : IDisposable
             {
                 ScreenGrabber.WarmUpJit();
                 _grabber ??= new ScreenGrabber(
+                    CaptureEngines.Parse(_settings.Behavior.CaptureEngine),
                     TimeSpan.FromSeconds(_settings.Behavior.PerDisplayTimeoutSeconds)
                 );
             }

@@ -103,6 +103,16 @@ internal sealed class BehaviorSettings
     public int PerDisplayTimeoutSeconds { get; set; } = 5;
 
     /// <summary>
+    /// 抓帧通道：auto（默认）/ wgc / gdi。
+    /// </summary>
+    /// <remarks>
+    /// 见 <see cref="Capture.CaptureEngine"/>：WGC 是 HDR 屏唯一正确的路，
+    /// 但它要建一台 D3D11 设备，实测会给常驻进程留下几百 MB 拿不回来的私有提交内存。
+    /// 默认的 auto 只在真有 HDR 需求时才付这笔钱；老配置里没有这一项时也按 auto 处理。
+    /// </remarks>
+    public string CaptureEngine { get; set; } = "auto";
+
+    /// <summary>
     /// 每次截图后是否同时留一份 16bit HDR 副本（PNG，BT.2020 + PQ）。
     /// 默认关：绝大多数用途是 OCR 和分享，多存一份大文件只是占地方。
     /// </summary>
@@ -210,6 +220,13 @@ internal static class SettingsStore
         if (string.IsNullOrWhiteSpace(settings.Output.Format))
         {
             settings.Output.Format = "png";
+        }
+
+        // 老配置里没有这一项时反序列化出来是 null/空 —— 必须落回 auto。
+        // 落成别的值（比如当成 wgc）会让每个升级上来的用户都白白多背几百 MB。
+        if (string.IsNullOrWhiteSpace(settings.Behavior.CaptureEngine))
+        {
+            settings.Behavior.CaptureEngine = "auto";
         }
 
         // schema 1 → 2：默认输出格式 JPG → PNG。

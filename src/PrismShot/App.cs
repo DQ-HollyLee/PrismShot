@@ -55,7 +55,9 @@ internal sealed class App : Application
 
         AppPaths.EnsureCreated();
         Log.Prune();
-        Log.Info($"PrismShot {BuildStamp.Full} 启动（{AppPaths.Current}）。");
+        Log.Info(
+            $"PrismShot {BuildStamp.Full} 启动（{AppPaths.Current}，权限={(Elevation.IsElevated ? "管理员" : "普通")}）。"
+        );
 
         // 没有主窗口，不能让 WPF 自动判断什么时候该收摊。
         ShutdownMode = ShutdownMode.OnExplicitShutdown;
@@ -225,29 +227,20 @@ internal sealed class App : Application
     /// <remarks>
     /// 每帧回读出来的像素、色调映射的中间结果、裁剪出的选区，都是十几 MB 起步的
     /// 大对象堆分配。常驻进程一旦空闲下来，GC 就再也不主动碰它们了 ——
-    /// 于是工作集稳稳停在几百 MB 甚至一个 GB 上下不来，而实际上那些图早就用不上了。
+    /// 于是工作集稳稳停在几百 MB 上下不来，而实际上那些图早就用不上了。
     /// <para>
-    /// 放在「一次截图彻底结束」这个明确的时点上收一次，比让 GC 自己挑时机靠谱得多：
-    /// 代价是一次几十毫秒的停顿，而它发生在用户已经拿到图之后，感觉不到。
+    /// 放在「一次截图彻底结束」这个明确的时点上收一次，比让 GC 自己挑时机靠谱得多。
+    /// 具体怎么收（以及为什么必须压缩大对象堆）见 <see cref="MemoryPressure"/>。
     /// </para>
     /// </remarks>
     private static void ReleaseFrameMemory()
     {
-        // 只有工作集真的一路涨上去了才动手。
-        // 强制 Gen2 是 stop-the-world 的，每张图都来一次等于给每次截图
-        // 都添一次看得见的停顿 —— 平时那几块缓冲让 GC 自己找时机收就够了。
-        long threshold = 256L * 1024 * 1024;
-        if (Environment.WorkingSet < threshold)
-        {
-            return;
-        }
-
         try
         {
-            GC.Collect(2, GCCollectionMode.Forced, blocking: true);
-            GC.WaitForPendingFinalizers();
-            GC.Collect(2, GCCollectionMode.Forced, blocking: true);
-            Log.Info($"已回收截图缓冲，工作集 {Environment.WorkingSet / (1024 * 1024)} MB。");
+            if (MemoryPressure.ReleaseIfNeeded())
+            {
+                Log.Info($"已回收截图缓冲，工作集 {MemoryPressure.WorkingSetMb} MB。");
+            }
         }
         catch (Exception ex)
         {
@@ -294,6 +287,27 @@ internal sealed class App : Application
         try
         {
             bool desired = _settings.Behavior.LaunchOnBoot;
+
+            // 最高权限的计划任务一旦注册，自启就归它管：
+            // 注册表那条 Run 必须让位，否则开机时任务与 Run 键各拉一个实例。
+            if (Elevation.IsTaskRegistered())
+            {
+                AutoStart.Remove();
+                Log.Info($"开机自启由计划任务「{Elevation.TaskName}」负责（管理员身份）。");
+                return;
+            }
+
+            if (!Elevation.IsElevated)
+            {
+                // 这不是错误，但必须留痕：前台是管理员窗口时热键会失灵，
+                // 用户报「任务管理器在前台时 Win+Shift+S 出来的是系统截图」时要能一眼对上。
+                Log.Info(
+                    "当前以普通权限运行。前台是管理员窗口（如任务管理器）时，"
+                        + "系统会绕过我们的键盘钩子，热键会被原生截图工具抢走。"
+                        + "执行一次 PrismShot.exe --elevate 可以彻底解决。"
+                );
+            }
+
             if (AutoStart.IsEnabled() != desired)
             {
                 _ = AutoStart.Apply(desired);

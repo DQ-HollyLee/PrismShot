@@ -24,6 +24,9 @@ internal static class AppPaths
 
     public static InstallKind Current => Kind.Value;
 
+    /// <summary>常规安装：数据进 AppData，可以写注册表自启、可以注册计划任务。</summary>
+    public static bool IsInstalled => Current == InstallKind.Installed;
+
     /// <summary>用户数据目录（配置、日志、插件数据）。</summary>
     public static string DataDirectory =>
         Current == InstallKind.Portable

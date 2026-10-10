@@ -2,9 +2,11 @@ using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
+using System.Threading;
 using System.Threading.Tasks;
 using PrismShot.Core;
 using PrismShot.Core.Capture;
+using PrismShot.Core.Diagnostics;
 using PrismShot.Core.Imaging;
 using PrismShot.Core.Interop;
 using PrismShot.Core.Ipc;
@@ -47,6 +49,10 @@ internal static class Program
             {
                 "--capture" => Capture(args),
                 "--probe" => Probe(args),
+                "--memtest" => MemoryTest.Run(args),
+                "--pipetest" => CapturePipelineProbe.Run(args),
+                "--elevate" => Elevate(),
+                "--unelevate" => Unelevate(),
                 "--version" => Version(),
                 _ => ForwardOrReside(args),
             };
@@ -63,26 +69,107 @@ internal static class Program
     /// </summary>
     private static int ForwardOrReside(string[] args)
     {
+        bool fromTask = Array.Exists(
+            args,
+            argument => string.Equals(argument, Elevation.FromTaskFlag, StringComparison.OrdinalIgnoreCase)
+        );
+
         using SingleInstanceGuard guard = new();
-        if (guard.TryAcquire())
+
+        // 由计划任务拉起时多等一会儿：上一个实例可能正在退出（比如刚刚被
+        // --elevate 或一次手动双击换掉），抢在它前面拿互斥体会让新实例误判「已经有实例在跑」
+        // 然后自己退出 —— 结果是用户既没有管理员实例，也没有普通实例。
+        if (!guard.TryAcquire(fromTask ? TimeSpan.FromSeconds(6) : TimeSpan.Zero))
         {
-            App app = new();
-            return app.Run();
+            if (args.Length == 0)
+            {
+                // 双击图标启动了第二次。老老实实告诉用户一声，
+                // 而不是再起一个进程去抢互斥体 —— 那样会留下两个都半死不活的实例。
+                Console.WriteLine(
+                    "PrismShot 已在运行。要截图请按 Win+Shift+S，或加 --screen / --region 参数。"
+                );
+                return 0;
+            }
+
+            IpcRequest request = Translate(args);
+            IpcResponse response = IpcClient.SendAsync(request).GetAwaiter().GetResult();
+
+            Console.WriteLine(IpcProtocol.Describe(response));
+            return response.Ok && string.IsNullOrEmpty(response.Error) ? 0 : 1;
         }
 
-        if (args.Length == 0)
+        // 注册过最高权限计划任务，但这次不是被它拉起来的（用户双击了图标）：
+        // 转交给任务去拉起管理员实例，否则前台是管理员窗口时热键会失灵。
+        if (
+            !fromTask
+            && !Elevation.IsElevated
+            && Elevation.IsTaskRegistered()
+            && Elevation.StartViaTask(out string note)
+        )
         {
-            // 双击图标启动了第二次。老老实实告诉用户一声，
-            // 而不是再起一个进程去抢互斥体 —— 那样会留下两个都半死不活的实例。
-            Console.WriteLine("PrismShot 已在运行。要截图请按 Win+Shift+S，或加 --screen / --region 参数。");
+            Log.Info(note);
             return 0;
         }
 
-        IpcRequest request = Translate(args);
-        IpcResponse response = IpcClient.SendAsync(request).GetAwaiter().GetResult();
+        App app = new();
+        return app.Run();
+    }
 
-        Console.WriteLine(IpcProtocol.Describe(response));
-        return response.Ok && string.IsNullOrEmpty(response.Error) ? 0 : 1;
+    /// <summary>
+    /// 让 PrismShot 以后都以管理员身份常驻。
+    /// </summary>
+    /// <remarks>
+    /// 只有这一步要过 UAC，之后的开机自启和手动启动都由计划任务静默完成。
+    /// 所以这里刻意把话说清楚：按下去会弹一次确认框，那不是出错。
+    /// </remarks>
+    private static int Elevate()
+    {
+        if (!Elevation.Register(out string message))
+        {
+            Console.WriteLine(message);
+            return 1;
+        }
+
+        Console.WriteLine(message);
+
+        // 注册表那条自启要让位，否则开机时任务和 Run 键会各起一个实例。
+        AutoStart.Remove();
+
+        // 现在跑着的这一份还是普通权限，让它退下去，换成管理员实例。
+        IpcResponse quit = IpcClient.SendAsync(new IpcRequest { Action = IpcActions.Quit })
+            .GetAwaiter()
+            .GetResult();
+        _ = quit;
+
+        Thread.Sleep(600);
+
+        if (Elevation.StartViaTask(out string note))
+        {
+            Console.WriteLine(note);
+            Console.WriteLine("PrismShot 现在以管理员身份常驻。");
+            return 0;
+        }
+
+        Console.WriteLine(note);
+        return 1;
+    }
+
+    private static int Unelevate()
+    {
+        if (!Elevation.Unregister(out string message))
+        {
+            Console.WriteLine(message);
+            return 1;
+        }
+
+        Console.WriteLine(message);
+        Console.WriteLine("下次启动会回到普通权限。开机自启按配置重新写回注册表。");
+
+        IpcResponse quit = IpcClient.SendAsync(new IpcRequest { Action = IpcActions.Quit })
+            .GetAwaiter()
+            .GetResult();
+        _ = quit;
+        return 0;
     }
 
     /// <summary>把命令行参数翻成统一的 IPC 请求。</summary>
@@ -205,7 +292,12 @@ internal static class Program
 
         IoDirectory.CreateDirectory(Path.GetDirectoryName(output) ?? ".");
 
-        ScreenGrabber grabber = new(TimeSpan.FromSeconds(5));
+        ScreenGrabber grabber = new(
+            CaptureEngines.Parse(
+                GetArgument(args, "--engine") ?? SettingsStore.Load().Behavior.CaptureEngine
+            ),
+            TimeSpan.FromSeconds(5)
+        );
         using (grabber)
         {
             CaptureBundle bundle = grabber.CaptureAsync().GetAwaiter().GetResult();

@@ -20,21 +20,42 @@ internal sealed class SingleInstanceGuard : IDisposable
     private bool _disposed;
 
     /// <summary>尝试成为主实例。抢到返回 true（调用方要起管道服务端），抢不到返回 false。</summary>
-    public bool TryAcquire()
+    public bool TryAcquire() => TryAcquire(TimeSpan.Zero);
+
+    /// <summary>
+    /// 尝试成为主实例，抢不到时最多再等 <paramref name="waitForPrevious"/>。
+    /// </summary>
+    /// <remarks>
+    /// 需要等待的唯一场景是「计划任务拉起的新实例」：它启动的那一刻，
+    /// 上一个实例可能正在退出（用户刚双击过图标、或者刚从普通权限换成管理员权限）。
+    /// 不等待的话它会看到互斥体还在，判定「已经有实例在跑」然后自己退出 ——
+    /// 而那个正在退出的实例又马上把互斥体放掉了，最后就是两边都没有实例。
+    /// </remarks>
+    public bool TryAcquire(TimeSpan waitForPrevious)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
 
-        Mutex mutex = new(initiallyOwned: true, MutexName, out bool createdNew);
-        if (!createdNew)
+        DateTime deadline = DateTime.UtcNow + waitForPrevious;
+        while (true)
         {
+            Mutex mutex = new(initiallyOwned: true, MutexName, out bool createdNew);
+            if (createdNew)
+            {
+                _mutex = mutex;
+                return true;
+            }
+
             // 别人持有着。这一份引用立刻放掉，免得拖到进程退出才释放，
             // 期间主实例万一崩了，下一个启动者会误以为还活着。
             mutex.Dispose();
-            return false;
-        }
 
-        _mutex = mutex;
-        return true;
+            if (DateTime.UtcNow >= deadline)
+            {
+                return false;
+            }
+
+            Thread.Sleep(120);
+        }
     }
 
     public void Dispose()

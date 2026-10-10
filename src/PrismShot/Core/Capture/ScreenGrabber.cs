@@ -153,12 +153,15 @@ internal sealed class CaptureBundle
 /// </summary>
 internal sealed class ScreenGrabber : IDisposable
 {
+    private readonly CaptureEngine _engine;
     private readonly TimeSpan _perDisplayTimeout;
     private D3D11CaptureDevice? _device;
     private int _deviceCreationFailed;
+    private int _engineLogged;
 
-    public ScreenGrabber(TimeSpan perDisplayTimeout)
+    public ScreenGrabber(CaptureEngine engine, TimeSpan perDisplayTimeout)
     {
+        _engine = engine;
         _perDisplayTimeout = perDisplayTimeout;
     }
 
@@ -204,6 +207,11 @@ internal sealed class ScreenGrabber : IDisposable
         List<DisplayTarget> targets = MonitorEnumerator.Enumerate();
         Rect32 virtualScreen = MonitorEnumerator.VirtualScreen;
 
+        if (!ShouldUseWgc(targets))
+        {
+            return CaptureByGdi(targets, virtualScreen);
+        }
+
         D3D11CaptureDevice? device = EnsureDevice();
         if (device is null)
         {
@@ -244,6 +252,61 @@ internal sealed class ScreenGrabber : IDisposable
             $"抓帧完成 {captures.Count}/{targets.Count} 块屏，用时 {watch.ElapsedMilliseconds} ms"
         );
         return new CaptureBundle(captures, virtualScreen, true);
+    }
+
+    /// <summary>
+    /// 这一帧值不值得为它建一台 D3D11 设备。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// 判断依据只有一个：有没有哪块屏真的需要浮点帧。
+    /// 显示器没开 HDR 时，DWM 合成出来的内容本来就在 8bit SDR 范围内，
+    /// 浮点帧里那些「超过 1.0 的高光」根本不存在，走 GDI 拿到的降级副本与它逐像素一致。
+    /// </para>
+    /// <para>
+    /// 代价对比是悬殊的：实测建一台 D3D11 11_1 设备并把 WGC 会话跑起来之后，
+    /// 进程的私有提交量会涨上去几百 MB，而且这部分**释放设备也拿不回来**
+    /// （驱动与 D3D 运行时的常驻，要到进程退出才归还）。
+    /// 一个常驻的截图工具为了一个用不上的 HDR 通道背这么一笔，不划算。
+    /// </para>
+    /// <para>
+    /// 色彩信息查不到时不赌 —— 那种情况下判断不了 HDR 到底开没开，
+    /// 宁可多背内存也不能把 HDR 内容按 SDR 截出来（那正是原生工具的毛病）。
+    /// </para>
+    /// </remarks>
+    private bool ShouldUseWgc(List<DisplayTarget> targets)
+    {
+        switch (_engine)
+        {
+            case CaptureEngine.Gdi:
+                Note("配置指定走 GDI");
+                return false;
+
+            case CaptureEngine.Wgc:
+                Note("配置指定走 WGC");
+                return true;
+        }
+
+        foreach (DisplayTarget target in targets)
+        {
+            if (target.ShouldCaptureAsFloat)
+            {
+                Note($"{target.DeviceName} 可能是 HDR（hdr={target.IsHdrEnabled} 色彩信息已知={target.IsColorInfoKnown}），走 WGC");
+                return true;
+            }
+        }
+
+        Note("没有任何显示器需要浮点帧，走 GDI（不建 D3D11 设备，省下几百 MB 常驻内存）");
+        return false;
+    }
+
+    /// <summary>选路理由只记一次 —— 它是常驻软件，别让一条日志把文件刷满。</summary>
+    private void Note(string reason)
+    {
+        if (Interlocked.Exchange(ref _engineLogged, 1) == 0)
+        {
+            Log.Info($"抓帧通道：{reason}。");
+        }
     }
 
     private async Task<DisplayCapture?> CaptureOneAsync(

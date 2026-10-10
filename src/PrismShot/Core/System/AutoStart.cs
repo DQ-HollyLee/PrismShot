@@ -76,6 +76,29 @@ internal static class AutoStart
         }
     }
 
+    /// <summary>移掉自启项。计划任务接管之后要用它把注册表那条让出去，否则开机会起两个实例。</summary>
+    public static void Remove()
+    {
+        if (!IsSupported)
+        {
+            return;
+        }
+
+        try
+        {
+            using RegistryKey? key = Registry.CurrentUser.OpenSubKey(RunKeyPath, writable: true);
+            if (key?.GetValue(ValueName) is string)
+            {
+                key.DeleteValue(ValueName, throwOnMissingValue: false);
+                Log.Info("已移除注册表自启项（改由计划任务接管）。");
+            }
+        }
+        catch (Exception ex)
+        {
+            Log.Warn($"移除注册表自启项失败：{ex.Message}");
+        }
+    }
+
     /// <summary>启动用的命令行。带引号，用户目录里有空格时也不会散架。</summary>
     public static string CommandLine
     {

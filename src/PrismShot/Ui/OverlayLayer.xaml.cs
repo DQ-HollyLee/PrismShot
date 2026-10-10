@@ -434,27 +434,7 @@ internal sealed partial class OverlayLayer : Window
 
         if (mode == SelectionMode.Freeform)
         {
-            List<Point32> points = _state.Freeform;
-            if (points.Count < 2)
-            {
-                return null;
-            }
-
-            PathFigure figure = new() { IsClosed = true, IsFilled = true };
-            for (int index = 0; index < points.Count; index++)
-            {
-                Point32 local = Local(points[index], localMonitor);
-                if (index == 0)
-                {
-                    figure.StartPoint = new Point(local.X, local.Y);
-                }
-                else
-                {
-                    figure.Segments.Add(new LineSegment(new Point(local.X, local.Y), true));
-                }
-            }
-
-            return new PathGeometry(new[] { figure });
+            return FreeformGeometry(_state.Freeform);
         }
 
         if (!_state.HasRect)
@@ -463,6 +443,54 @@ internal sealed partial class OverlayLayer : Window
         }
 
         return Translate(_state.Rect);
+    }
+
+    // 自由绘制的几何图形必须**增量**搭出来，每次重画都从头 new 一遍是不可行的。
+    //
+    // 顶点是一边拖一边往列表里加的，一次框选下来能有几千个。原先是每收到一个
+    // MouseMove 就把整条折线重建成新的 PathGeometry + 几千个 LineSegment ——
+    // 实测两万个顶点时单次重画要分配 5.5 MB，一次十几秒的框选累计就是几个 GB 的
+    // 垃圾，全部堆到 Gen2 上，工作集跟着一路涨（用户报的「内存暴涨」有一半是它）。
+    //
+    // 改成：几何对象只建一次，之后每来一个新顶点就补一段。顶点列表只会增长，
+    // 于是每次重画的开销从「顶点数」降到「新增顶点数」—— 绝大多数时候就是 1。
+    // 换了一轮框选（列表实例被 SelectionState 换掉）或顶点变少时，才整体重建。
+    private List<Point32>? _freeformSource;
+    private PathFigure? _freeformFigure;
+    private PathGeometry? _freeformGeometry;
+    private int _freeformVertices;
+
+    private Geometry? FreeformGeometry(List<Point32> points)
+    {
+        if (points.Count < 2)
+        {
+            return null;
+        }
+
+        if (!ReferenceEquals(_freeformSource, points) || points.Count < _freeformVertices)
+        {
+            _freeformSource = points;
+            _freeformFigure = new PathFigure { IsClosed = true, IsFilled = true };
+            _freeformGeometry = new PathGeometry();
+            _freeformGeometry.Figures.Add(_freeformFigure);
+            _freeformVertices = 0;
+        }
+
+        if (_freeformVertices == 0)
+        {
+            Point32 start = Local(points[0], default);
+            _freeformFigure!.StartPoint = new Point(start.X, start.Y);
+            _freeformVertices = 1;
+        }
+
+        for (int index = _freeformVertices; index < points.Count; index++)
+        {
+            Point32 local = Local(points[index], default);
+            _freeformFigure!.Segments.Add(new LineSegment(new Point(local.X, local.Y), true));
+        }
+
+        _freeformVertices = points.Count;
+        return _freeformGeometry;
     }
 
     /// <summary>把虚拟坐标的矩形搬进本层自己的坐标系。</summary>
