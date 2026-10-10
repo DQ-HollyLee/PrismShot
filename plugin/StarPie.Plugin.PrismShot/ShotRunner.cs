@@ -1,3 +1,4 @@
+using System.IO;
 using System.Globalization;
 
 namespace StarPie.Plugin.PrismShot;

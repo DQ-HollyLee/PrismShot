@@ -41,7 +41,7 @@ internal sealed class OcrCaptureAction : IActionContribution
             Label = "识别结果写入剪贴板",
             Type = ParameterFieldType.Bool,
             DefaultValue = "true",
-            HelpText = "关掉则只在通知里显示识别到的文本。",
+            HelpText = "关掉则只在结果窗口里显示，不自动占用剪贴板（窗口里的「复制文本」仍然可用）。",
         },
     };
 
@@ -145,6 +145,34 @@ internal sealed class OcrCaptureAction : IActionContribution
         TryDelete(imagePath);
 
         _context.Log.Info($"识别完成（{recognized.EngineName}），{recognized.Text.Length} 字。");
+
+        // 认出来的文字要给用户看，就得给一个能看的容器 ——
+        // Windows 通知只有一行、还会自己消失，表格、段落、多行文本在里面全是残缺的。
+        // 所以这一步照搬宿主：弹出 OcrResultWindow（可编辑、可复制、可搜索、ESC 关闭），
+        // 而不是往通知里塞一句话。要不要弹听宿主的 ShowResultWindow ——
+        // 那是用户在 StarPie 里就设置过的开关，插件不该有第二个意见。
+        if (OcrConfigLoader.Current.ShowResultWindow)
+        {
+            try
+            {
+                OcrResultWindow.Show(
+                    recognized.Text,
+                    recognized.EngineName,
+                    recognized.Latency,
+                    copy
+                );
+
+                // 窗口已经把内容摆出来了，再弹一条通知就是重复打扰。
+                return ActionResult.Ok("识别结果已在窗口中打开。", silent: true);
+            }
+            catch (Exception ex)
+            {
+                // 弹不出来（没有可用的 Dispatcher、WPF 初始化失败之类）不能把识别结果弄丢：
+                // 退回通知，至少那行字还能看见，并且日志里留下来龙去脉。
+                _context.Log.Warn($"结果窗口没起来，退回通知：{ex.Message}");
+            }
+        }
+
         return ActionResult.Ok(Summarize(recognized.Text), silent: false);
     }
 
@@ -165,11 +193,11 @@ internal sealed class OcrCaptureAction : IActionContribution
             }
             else if (!string.IsNullOrWhiteSpace(outcome.Text))
             {
-                return new Recognition(outcome.Text!, "StarPie OCR", false);
+                return new Recognition(outcome.Text!, "StarPie OCR", "—", false);
             }
             else
             {
-                return new Recognition(string.Empty, string.Empty, false, outcome.Reason ?? "这一段区域里没有识别到文字。");
+                return new Recognition(string.Empty, string.Empty, "—", false, outcome.Reason ?? "这一段区域里没有识别到文字。");
             }
         }
 
@@ -204,15 +232,15 @@ internal sealed class OcrCaptureAction : IActionContribution
         }
         catch (Exception ex)
         {
-            return new Recognition(string.Empty, string.Empty, false, $"识别失败：{ex.Message}");
+            return new Recognition(string.Empty, string.Empty, "—", false, $"识别失败：{ex.Message}");
         }
 
         if (string.IsNullOrWhiteSpace(result.Text))
         {
-            return new Recognition(string.Empty, string.Empty, false, "这一段区域里没有识别到文字。");
+            return new Recognition(string.Empty, string.Empty, "—", false, "这一段区域里没有识别到文字。");
         }
 
-        return new Recognition(result.Text, result.EngineName, result.IsDiagnostic);
+        return new Recognition(result.Text, result.EngineName, result.Latency, result.IsDiagnostic);
     }
 
     /// <summary>中转图目录。用宿主的 DataDirectory：插件间互不干扰，且卸载时宿主一并带走。</summary>
@@ -248,6 +276,9 @@ internal sealed class OcrCaptureAction : IActionContribution
     private sealed record Recognition(
         string Text,
         string EngineName,
+
+        /// <summary>识别耗时，原样显示在结果窗口的引擎徽章上（"引擎名 · 1234ms"）。宿主接缝没给出耗时时填 "—"。</summary>
+        string Latency,
         bool IsDiagnostic,
         string? Failure = null
     );

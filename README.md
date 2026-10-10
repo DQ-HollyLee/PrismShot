@@ -188,6 +188,8 @@ https://github.com/DQ-HollyLee/PrismShot/releases/latest
 > 配置直接读 StarPie 自己的 `config.json` —— 你在 StarPie 里选的引擎和填的 Key，
 > 插件用的是同一份，不用再配一遍。被换掉的只有「框选」那一半。
 > 本机实测：AI 视觉 + DeepSeek，`875×375` 的选区认出 347 字。
+> 认完字弹出的是**宿主那个结果窗口**（可编辑、可复制、可搜索、`ESC` 关闭），
+> 不是一行会自己消失的系统通知 —— 表格与多行文本只有窗口装得下。
 > 宿主若补上 `IHostOcrService` 接缝，插件无需重新编译就会改走宿主的引擎，
 > 提案见 [upstream/ocr-seam.md](plugin/StarPie.Plugin.PrismShot/upstream/ocr-seam.md)。
 

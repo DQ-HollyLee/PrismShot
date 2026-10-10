@@ -19,6 +19,14 @@
     <!-- 只为拿到 System.Drawing.Common：它属于 Microsoft.WindowsDesktop.App 共享框架，
          用 FrameworkReference 而不是 NuGet 包，产物目录里就不会多出一份 System.Drawing.dll。 -->
     <UseWindowsForms>true</UseWindowsForms>
+
+    <!--
+      结果窗口是 WPF。宿主"截屏识字"弹的 OcrResultWindow 就是 .xaml，要一模一样就得能编译 XAML。
+      PresentationFramework / PresentationCore 与 WinForms 同属 Microsoft.WindowsDesktop.App
+      共享框架，所以开了它也不会往产物目录里多塞任何 dll。
+    -->
+    <UseWPF>true</UseWPF>
+
     <DisableWinExeOutputInference>true</DisableWinExeOutputInference>
 
     <AssemblyName>StarPie.Plugin.PrismShot</AssemblyName>

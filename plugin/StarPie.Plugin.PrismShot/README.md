@@ -40,7 +40,7 @@ StarPie 用一个「目录 + `plugin.json`」认插件：目录里只要有这�
 | PrismShot 任意圈选 | `captureFreeform` | 套索画出任意形状，输出带透明的 PNG |
 | PrismShot 窗口截图 | `captureWindow` | 单击一个窗口，截取它的完整矩形 |
 | PrismShot 全屏截图 | `captureScreen` | 整个虚拟桌面（或光标所在的那一块屏） |
-| PrismShot 截图识字 | `captureOcr` | 框选后交给 StarPie 的 OCR 引擎认字 |
+| PrismShot 截图识字 | `captureOcr` | 框选后交给 StarPie 的 OCR 引擎认字，认完弹出结果窗口 |
 
 四个截图动作共用这三个可选参数；**留空一律跟随插件设置页，再没有就跟随 PrismShot 自己的配置**：
 
@@ -89,6 +89,32 @@ StarPie 用一个「目录 + `plugin.json`」认插件：目录里只要有这�
 宿主若哪天把 `IHostOcrService` 补进 SDK（提案见 [upstream/ocr-seam.md](upstream/ocr-seam.md)），
 插件**无需重新编译**就会改走宿主的引擎 —— 那一侧是反射探测。
 重复实现永远不如唯一真相，照搬的那份本来就只是代班。
+
+## 认完字之后：弹的是结果窗口，不是系统通知
+
+识别成功后弹 [OcrResultWindow](upstream/OcrResultWindow.xaml) ——
+**就是宿主「截屏识字」弹的那个窗口**，布局、圆角、阴影、按钮一字未改，同样是：
+可编辑的文本框（自动全选，可以直接改完再复制）、字符计数、引擎徽章
+（`引擎名 · 耗时`）、`📋 复制文本` / `🔍 网页搜索` / `⚙️ 接口设置`，`ESC` 或「完成」关闭，
+拖动卡片任意位置可移动。
+
+不做通知，是因为通知装不下识别结果：只有一行、还会自己消失，
+表格、段落、多行文本在里面全是残缺的 —— 而那正是识别表格时最要紧的东西。
+
+弹不弹听宿主的 `OcrConfig.ShowResultWindow`（用户在 StarPie 里配过，插件不该有第二个意见）。
+关掉它、或者窗口没能起来（没有可用的 Dispatcher 之类）时，才退回通知，
+至少让那行摘要还能看见；后者会往宿主日志里写一条 `WARN`。
+
+配色不写死：窗口里的颜色全走 `DynamicResource`，解析到的是**宿主当前主题**——
+你换成暗色或换一套配色，窗口跟着变。只有在没有宿主 `Application` 的场合
+（独立验证桩）才由 `OcrTheme` 按系统亮/暗注入一组兜底色，
+否则那会是一个全透明的、看不见的窗口 —— 编译期和运行期都不会报错，只能渲染出来才发现。
+
+一处与宿主不同，说明白：「⚙️ 接口设置」按钮点开的**不是**宿主的设置对话框
+（那是宿主内部类型，插件拿不到，照搬的 `OcrManager` 里 `ShowSettingsDialog` 也正因此被删了），
+而是在资源管理器里定位 `%LOCALAPPDATA%\StarPie\config.json`。
+引擎、模型、密钥、后处理开关都在这个文件里，改完保存即刻生效 ——
+下一次识别就用新配置（`OcrConfigLoader` 按文件时间戳判断，不需要重启宿主）。
 
 ## 已知边界
 
