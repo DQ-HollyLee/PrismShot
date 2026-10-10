@@ -2,8 +2,10 @@ using System;
 using System.Diagnostics;
 using System.Globalization;
 using System.IO;
+using System.Linq;
 using System.Runtime.InteropServices;
 using System.Security;
+using System.Xml.Linq;
 using PrismShot.Core;
 
 namespace PrismShot.Core.Platform;
@@ -107,6 +109,61 @@ internal static class Elevation
     }
 
     /// <summary>
+    /// 任务里写死的那个 exe 路径。读不到返回 null。
+    /// </summary>
+    /// <remarks>
+    /// 刻意直接读任务定义文件，不走 <c>schtasks /Query /XML</c>：
+    /// 这条要在每次启动时跑一次，多起一个进程去问一件「读文件就知道」的事不划算，
+    /// 而且 /Query 在任务刚注册完的那一小段时间里偶尔会拿不到内容。
+    /// </remarks>
+    public static string? TaskCommand()
+    {
+        try
+        {
+            string directory = Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.System),
+                "Tasks"
+            );
+            string path = Path.Combine(directory, TaskName);
+            if (!File.Exists(path))
+            {
+                return null;
+            }
+
+            XDocument document = XDocument.Parse(File.ReadAllText(path));
+            return document
+                .Descendants()
+                .FirstOrDefault(element => element.Name.LocalName == "Command")
+                ?.Value.Trim();
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// 任务指向的 exe 是不是已经不是现在这个。
+    /// </summary>
+    /// <remarks>
+    /// 任务定义里那条 <c>&lt;Command&gt;</c> 是注册那一刻写死的。程序后来换了位置
+    /// （换了版本、挪了目录、从源码目录改用发行包），任务照样去拉那个旧路径 ——
+    /// 若旧 exe 已经被删掉，表现就是「开机之后热键全都不灵」，而任务计划程序里
+    /// 看起来一切正常。这条就是用来在启动自检时把它揪出来的。
+    /// </remarks>
+    public static bool IsTaskStale()
+    {
+        string? command = TaskCommand();
+        if (string.IsNullOrEmpty(command))
+        {
+            // 读不出来就当它没问题 —— 拿不到证据时不要去改一个能用的自启。
+            return false;
+        }
+
+        return !string.Equals(command, AppPaths.ExecutablePath, StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>
     /// 注册（或更新）最高权限计划任务。会弹一次 UAC —— 这是整个流程里唯一一次。
     /// </summary>
     public static bool Register(out string message)
@@ -138,7 +195,9 @@ internal static class Elevation
 
         int exit = RunSchtasks(
             $"/Create /TN \"{TaskName}\" /XML \"{xmlPath}\" /F",
-            elevate: true,
+            // 已经是管理员就别再走 runas 动词了 —— 提权动词会多一次 ShellExecute 往返，
+            // 而启动自检时重注册任务走的正是这条路。
+            elevate: !IsElevated,
             out string output
         );
 
@@ -159,7 +218,11 @@ internal static class Elevation
     /// <summary>删掉计划任务，回到注册表 Run 键那条普通权限的自启。</summary>
     public static bool Unregister(out string message)
     {
-        int exit = RunSchtasks($"/Delete /TN \"{TaskName}\" /F", elevate: true, out string output);
+        int exit = RunSchtasks(
+            $"/Delete /TN \"{TaskName}\" /F",
+            elevate: !IsElevated,
+            out string output
+        );
         if (exit == 0)
         {
             message = $"已删除计划任务「{TaskName}」。";

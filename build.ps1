@@ -142,10 +142,43 @@ $stage = Join-Path $root "artifacts/PrismShot-$version"
 $appDir = $stage
 $pluginDir = Join-Path $stage 'plugin/prismshot'
 
+# 常驻实例跑的往往**正是**上一版 artifacts 里的那个 exe，它会把目录里所有 dll 都锁住，
+# 于是后面既删不掉也覆盖不了。这不是偶发：PrismShot 天生常驻，只要在本机构建就一定会撞上。
+# 所以构建前先请它退出 —— 图省事用 Stop-Process 会让它来不及摘钩子，走它自己的 --quit。
+$resident = Join-Path $stage 'PrismShot.exe'
+if ((Test-Path $resident) -and (Get-Process -Name PrismShot -ErrorAction SilentlyContinue)) {
+    Write-Host "→ 通知常驻实例退出（它占着 $stage 里的文件）" -ForegroundColor Cyan
+    try {
+        # 这条命令失败不该中断构建：进程可能压根起不来（运行时解析之类），
+        # 也可能本来就没在跑。能不能删掉产物由后面的 Delete 说了算。
+        $previous = $ErrorActionPreference
+        $ErrorActionPreference = 'Continue'
+        & $resident --quit 2>&1 | Out-Null
+        $ErrorActionPreference = $previous
+    }
+    catch {
+        Write-Host "  （让它退出这一步没成功，继续尝试清目录）" -ForegroundColor DarkGray
+    }
+
+    for ($i = 0; $i -lt 25; $i++) {
+        if (-not (Get-Process -Name PrismShot -ErrorAction SilentlyContinue)) { break }
+        Start-Sleep -Milliseconds 200
+    }
+}
+
 # 重跑时要先清掉上一次的产物。同样避开 Remove-Item 的回收站钩子（见上面 pdb 那段说明），
 # 而且 Directory.Delete 是「删除」而不是「精心 recycle」，符合构建中间目录的语义。
 if ([System.IO.Directory]::Exists($stage)) {
-    [System.IO.Directory]::Delete($stage, $true)
+    try {
+        [System.IO.Directory]::Delete($stage, $true)
+    }
+    catch {
+        throw @"
+清不掉上一版产物：$stage
+$($_.Exception.Message)
+多半仍有 PrismShot 在跑（它锁着目录里的 dll）。先执行 PrismShot.exe --quit 再构建。
+"@
+    }
 }
 
 [System.IO.Directory]::CreateDirectory($appDir) | Out-Null

@@ -293,6 +293,28 @@ internal sealed class App : Application
             if (Elevation.IsTaskRegistered())
             {
                 AutoStart.Remove();
+
+                // 任务定义里那条 <Command> 是注册那一刻写死的，之后从不刷新。
+                // 程序换了位置（换版本、挪目录、从源码目录改用发行包）之后，
+                // 开机拉起的还是那个旧 exe —— 若它已经被删掉，表现就是「重启后热键全都不灵」，
+                // 而任务计划程序里看起来一切正常。此刻若已经是管理员，直接重注册，
+                // 不会再弹 UAC；不是管理员就只留痕，让 --elevate 去修。
+                if (Elevation.IsTaskStale())
+                {
+                    if (Elevation.IsElevated)
+                    {
+                        _ = Elevation.Register(out string note);
+                        Log.Info($"计划任务指向的 exe 已过时，已重新注册：{note}");
+                    }
+                    else
+                    {
+                        Log.Warn(
+                            "计划任务指向的 exe 与当前这个不一致，而现在是普通权限，改不动它。"
+                                + "请以管理员身份运行一次 PrismShot.exe --elevate。"
+                        );
+                    }
+                }
+
                 Log.Info($"开机自启由计划任务「{Elevation.TaskName}」负责（管理员身份）。");
                 return;
             }
@@ -308,10 +330,15 @@ internal sealed class App : Application
                 );
             }
 
-            if (AutoStart.IsEnabled() != desired)
+            // 「有没有这一条」和「这一条指得对不对」是两件事，必须分开判断。
+            // IsEnabled 只看那个值存不存在，于是出现过一次这样的情形：
+            // 早期从源码目录跑过一次，注册表里写下了 bin\Release 下那个中间产物；
+            // 后来一直用发行包里的 exe，可自启项从不刷新，开机拉起的始终是那个旧路径。
+            // 用户看到的就是「开机自启的 exe 不是最新的那个」—— 正出自这里。
+            if (AutoStart.IsEnabled() != desired || AutoStart.IsStale())
             {
                 _ = AutoStart.Apply(desired);
-                Log.Info($"开机自启已设为 {desired}。");
+                Log.Info($"开机自启已设为 {desired}：{AutoStart.CommandLine}");
             }
         }
         catch (Exception ex)

@@ -69,6 +69,23 @@ internal static class ImageWriter
         return unique;
     }
 
+    /// <summary>
+    /// 编码成 PNG 字节，不落盘。
+    /// </summary>
+    /// <remarks>
+    /// 剪贴板要放带透明通道的图时用得上：PNG 是唯一一种「贴出去之后透明还在」的通用载体，
+    /// 而它的字节正好能原样塞进 <c>PNG</c> 这个剪贴板格式里，不用再造一种编码。
+    /// </remarks>
+    public static byte[] ToPngBytes(Raster raster)
+    {
+        PngBitmapEncoder encoder = new();
+        encoder.Frames.Add(BitmapFrame.Create(raster.ToBitmapSource()));
+
+        using MemoryStream stream = new();
+        encoder.Save(stream);
+        return stream.ToArray();
+    }
+
     public static BitmapEncoder CreateEncoder(string path, int jpegQuality)
     {
         string extension = Path.GetExtension(path).ToLowerInvariant();

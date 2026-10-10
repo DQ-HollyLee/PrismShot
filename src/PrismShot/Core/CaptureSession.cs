@@ -136,6 +136,10 @@ internal sealed class CaptureSession : IDisposable
         ImageOutputFormat format = ImageWriter.Parse(request.Format ?? _settings.Output.Format);
         int quality = request.Quality > 0 ? request.Quality : _settings.Output.JpegQuality;
 
+        // 只有圈选会产生透明区域。这个标志要一路带到剪贴板：
+        // CF_DIB 装不下 alpha，剪贴板那边得据此换成「PNG + DIBV5 + 白底 DIB」三份一起投。
+        bool hasAlpha = false;
+
         // 圈选出来的不规则形状，只有带 alpha 通道的格式才装得下。
         // 而默认格式是 JPG（为了 OCR 顺手），它偏偏没有 alpha ——
         // 照原样存的话，用户圈了半天存出来的还是一整张外接矩形，等于白圈。
@@ -149,6 +153,7 @@ internal sealed class CaptureSession : IDisposable
             }
 
             raster.ApplyPolygonAlpha(polygon, region.Left, region.Top);
+            hasAlpha = true;
         }
 
         string? savedPath = null;
@@ -164,7 +169,7 @@ internal sealed class CaptureSession : IDisposable
         bool clipboardDone = false;
         if (_settings.Output.CopyToClipboard && !request.SkipClipboard)
         {
-            clipboardDone = await PushClipboardAsync(raster, savedPath).ConfigureAwait(false);
+            clipboardDone = await PushClipboardAsync(raster, savedPath, hasAlpha).ConfigureAwait(false);
         }
 
         Log.Info(
@@ -344,7 +349,7 @@ internal sealed class CaptureSession : IDisposable
         return new string(buffer);
     }
 
-    private Task<bool> PushClipboardAsync(Raster raster, string? savedPath)
+    private Task<bool> PushClipboardAsync(Raster raster, string? savedPath, bool hasAlpha)
     {
         bool asFile = _settings.Output.ClipboardAsFile;
         return Task.Run(() =>
@@ -353,7 +358,7 @@ internal sealed class CaptureSession : IDisposable
             {
                 return asFile && savedPath is not null
                     ? ClipboardWriter.TrySetFile(savedPath)
-                    : ClipboardWriter.TrySetBitmap(raster);
+                    : ClipboardWriter.TrySetBitmap(raster, hasAlpha);
             }
             catch (Exception ex)
             {

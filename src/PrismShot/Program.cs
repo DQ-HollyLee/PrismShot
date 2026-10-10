@@ -53,6 +53,7 @@ internal static class Program
                 "--pipetest" => CapturePipelineProbe.Run(args),
                 "--elevate" => Elevate(),
                 "--unelevate" => Unelevate(),
+                "--uninstall" => Uninstall(args),
                 "--version" => Version(),
                 _ => ForwardOrReside(args),
             };
@@ -169,6 +170,109 @@ internal static class Program
             .GetAwaiter()
             .GetResult();
         _ = quit;
+        return 0;
+    }
+
+    /// <summary>
+    /// 卸载：退出常驻实例、删掉开机自启（计划任务 + 注册表），可选清掉本程序自己的数据目录。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// 为什么必须有这条命令：两条自启都不在程序目录里 —— 一个在注册表 Run 键、
+    /// 一个在任务计划程序。直接把程序文件夹删掉，那两处**引用着一个早已不存在的 exe**
+    /// 的条目会原样留下来：开机时 Windows 试着启动它、失败、多半一声不响，
+    /// 而用户在「任务管理器 → 启动」里看到的就是一个删不掉、也看不出指向哪里的条目。
+    /// 卸载这种事只能由程序自己来做，它才知道自己往哪些地方写过东西。
+    /// </para>
+    /// <para>
+    /// 顺序上**先让常驻实例退出**：它还活着的话，下一次启动自检（或者用户随手双击一下）
+    /// 就会把自启又写回去，等于白卸一次。
+    /// </para>
+    /// </remarks>
+    private static int Uninstall(string[] args)
+    {
+        bool purge = Array.Exists(
+            args,
+            argument => string.Equals(argument, "--purge", StringComparison.OrdinalIgnoreCase)
+        );
+
+        Console.WriteLine("PrismShot 卸载");
+        Console.WriteLine();
+
+        // 1) 常驻实例
+        try
+        {
+            IpcResponse quit = IpcClient.SendAsync(new IpcRequest { Action = IpcActions.Quit })
+                .GetAwaiter()
+                .GetResult();
+            Console.WriteLine(quit.Ok ? "常驻实例已退出。" : "没有在运行的常驻实例。");
+        }
+        catch (Exception ex)
+        {
+            // 没在跑的时候管道连不上，这是正常情形，不是失败。
+            Console.WriteLine($"常驻实例未在运行（{ex.Message}）");
+        }
+
+        Thread.Sleep(400);
+
+        // 2) 计划任务（管理员常驻那条）
+        if (Elevation.IsTaskRegistered())
+        {
+            Elevation.Unregister(out string note);
+            Console.WriteLine(note);
+        }
+        else
+        {
+            Console.WriteLine("没有注册计划任务，跳过。");
+        }
+
+        // 3) 注册表 Run 键
+        string? before = AutoStart.Current();
+        if (before is null)
+        {
+            Console.WriteLine("注册表里没有开机自启项，跳过。");
+        }
+        else
+        {
+            AutoStart.Remove();
+            Console.WriteLine(
+                AutoStart.Current() is null
+                    ? $"已删除注册表自启项（原先指向 {before}）。"
+                    : $"注册表自启项删除失败，请手动检查：{before}"
+            );
+        }
+
+        // 4) 数据目录
+        Console.WriteLine();
+        Console.WriteLine($"配置与日志：{AppPaths.DataDirectory}");
+        if (purge)
+        {
+            try
+            {
+                if (IoDirectory.Exists(AppPaths.DataDirectory))
+                {
+                    IoDirectory.Delete(AppPaths.DataDirectory, recursive: true);
+                    Console.WriteLine("已删除（--purge）。");
+                }
+                else
+                {
+                    Console.WriteLine("不存在，无需删除。");
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"删除失败：{ex.Message}");
+            }
+        }
+        else
+        {
+            Console.WriteLine("已保留。要连它一起删，重跑一次并加 --purge。");
+        }
+
+        // 截图是用户的东西，卸载不该碰。明确说出来，免得以为被一起删了。
+        Console.WriteLine($"截图目录（你的文件，永不动）：{AppPaths.DefaultScreenshotDirectory}");
+        Console.WriteLine();
+        Console.WriteLine("自启已清干净，现在可以删除 PrismShot 的程序文件夹了。");
         return 0;
     }
 

@@ -99,6 +99,25 @@ internal static class AutoStart
         }
     }
 
+    /// <summary>注册表里现在写着的自启命令行；没有这一条则为 null。</summary>
+    public static string? Current()
+    {
+        if (!IsSupported)
+        {
+            return null;
+        }
+
+        try
+        {
+            using RegistryKey? key = Registry.CurrentUser.OpenSubKey(RunKeyPath, writable: false);
+            return key?.GetValue(ValueName) as string;
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
     /// <summary>启动用的命令行。带引号，用户目录里有空格时也不会散架。</summary>
     public static string CommandLine
     {

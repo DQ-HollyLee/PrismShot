@@ -70,6 +70,9 @@ hdrshot-screenshot/
 - `PrismShot.exe --pipetest`：抓帧流水线按 `device / frame / texture / readback /
   tonemap / dispose / collect` 分段记内存，以及 `--d3dmin` 用裸 `D3D11CreateDevice`
   跑参数矩阵。用来回答"这内存是我们自己用的，还是运行时/驱动的固定成本"
+- `.cache/cliptest`：链 `ClipboardWriter` / `Raster` / `ImageWriter` 的真实源码，
+  写进剪贴板再按接收方的方式读回来查 —— BITMAPV5HEADER 的 124 字节布局与四个通道掩码
+  写错了不报错、只会让对方画出怪东西，**只能靠这种写读闭环抓住**
 - `.cache/plugincheck`：复刻宿主的安装闸门（清单字段 / 入口类型 / 契约引用 / TFM）
   与运行时契约（五个动作的注册、参数校验、Preview、ESC 取消、停用后留有什么），
   还能在 PrismShot 常驻实例在线时跑通真实截图链路。不需要装 StarPie
