@@ -36,7 +36,13 @@ internal sealed class IpcRequest
     /// <summary>为 true 时不走剪贴板。</summary>
     public bool SkipClipboard { get; set; }
 
-    public override string ToString() => $"{Action} {Mode}";
+    /// <summary>
+    /// 日志里的样子。<see cref="Mode"/> 只对截图有意义，
+    /// 否则会在日志里写出「收到 IPC 命令：reload region」这种让人以为
+    /// 有人按了区域截图的东西。
+    /// </summary>
+    public override string ToString() =>
+        string.Equals(Action, IpcActions.Capture, StringComparison.Ordinal) ? $"{Action} {Mode}" : Action;
 }
 
 /// <summary>动作名常量。字符串散落各处迟早拼错。</summary>
@@ -71,6 +77,13 @@ internal sealed class IpcResponse
 
     public string? Error { get; set; }
 
+    /// <summary>
+    /// 给命令行看的一句话结果。截图类应答留空（尺寸和路径本身就是结果），
+    /// reload / quit 这类没有产物的动作得自己说清楚做了什么 ——
+    /// 否则命令行只能拼出一句「ok 0x0」，用户看着像出错。
+    /// </summary>
+    public string? Message { get; set; }
+
     public string? FilePath { get; set; }
 
     public int Width { get; set; }
@@ -104,6 +117,9 @@ internal sealed class IpcResponse
 
     public static IpcResponse Cancelled() => new() { Ok = true, Canceled = true };
 
+    /// <summary>没有产物、但确实做成了某件事的应答（reload / quit）。</summary>
+    public static IpcResponse Done(string message) => new() { Ok = true, Message = message };
+
     public static IpcResponse Failed(string message) => new() { Ok = false, Error = message };
 }
 
@@ -130,10 +146,39 @@ internal static class IpcProtocol
     public static string Serialize(IpcResponse response) =>
         JsonSerializer.Serialize(response, Options);
 
+    /// <summary>
+    /// 把应答转成给人看的一行字。
+    /// </summary>
+    /// <remarks>
+    /// 这里必须按「这条应答有没有产物」分开说：截图有尺寸和路径，而 reload / quit
+    /// 什么都没有。早先一律按截图的格式硬拼，于是 <c>--reload</c> 打印的是
+    /// <c>ok 0x0</c> —— 一句话等于没说，还让人以为出了错。
+    /// </remarks>
     public static string Describe(IpcResponse response)
     {
-        return string.IsNullOrEmpty(response.Error)
-            ? $"ok {response.Width}x{response.Height} {(response.Canceled ? "canceled" : response.FilePath)}"
-            : $"error: {response.Error}";
+        if (!string.IsNullOrEmpty(response.Error))
+        {
+            return $"error: {response.Error}";
+        }
+
+        if (!string.IsNullOrEmpty(response.Message))
+        {
+            return $"ok {response.Message}";
+        }
+
+        if (response.Canceled)
+        {
+            return response.Width > 0 && response.Height > 0
+                ? $"ok {response.Width}x{response.Height} canceled"
+                : "canceled";
+        }
+
+        // 没有尺寸也没有路径 = 这条应答本来就不带产物，别再拼一个「0x0」出来。
+        if (response.Width <= 0 && response.Height <= 0 && string.IsNullOrEmpty(response.FilePath))
+        {
+            return "ok";
+        }
+
+        return $"ok {response.Width}x{response.Height} {response.FilePath}";
     }
 }

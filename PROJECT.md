@@ -77,6 +77,9 @@ hdrshot-screenshot/
   确认 SACL 里那条 `ML` ACE 真的把完整性标签压到了 Medium（`0x2000`）。
   这条必须测：降标签那几步里有任何一步失败都会**静默退回**普通管道，
   而在普通权限下看起来一切正常 —— 只有管理员常驻时才会露出「命令行全体失效」
+- `.cache/desctest`：链 `IpcProtocol` 的真实源码，把每类应答（有产物 / 无产物 /
+  取消 / 出错 / 老服务端回的光秃秃 Ok）钉在一组断言上。命令行那一行是**产品输出**，
+  不是调试打印 —— `--reload` 曾经打出 `ok 0x0` 就是没人为它写断言的下场
 - `.cache/plugincheck`：复刻宿主的安装闸门（清单字段 / 入口类型 / 契约引用 / TFM）
   与运行时契约（五个动作的注册、参数校验、Preview、ESC 取消、停用后留有什么），
   还能在 PrismShot 常驻实例在线时跑通真实截图链路。不需要装 StarPie
@@ -130,13 +133,9 @@ hdrshot-screenshot/
       注册要调 `schtasks.exe`，在受限环境里被安全策略拦下，改由使用者在普通命令行跑了一次
       （弹一次 UAC）。日志从「权限=普通」变成「权限=管理员」，任务管理器聚焦时
       `Win+Shift+S` 已被接管，不再弹原生截图。读回的任务 XML 与设计一致
-- [ ] **实机验证 `--elevate` ② 开机静默**：注销 / 重启后是否仍以管理员起、且不再弹 UAC。
-      `LogonTrigger` 已配、`ExecutionTimeLimit=PT0S` 也防住了 72 小时那条，
-      但要等下一次开机才算数
-- [ ] **实机验证：管理员常驻时，普通权限命令行能连上管道**。`MediumLabelPipe` 已把标签
-      压到 Medium（`.cache/ipctest` 验到了 `0x2000`），但「High 服务端 + Medium 客户端
-      真的被放行」只能在管理员实例在跑时验证：跑一次 `PrismShot.exe --quit` 或 `--reload`，
-      应当正常应答而不是 `Access to the path is denied.`
-      ⚠️ 本机受限环境既起不了管理员进程、也动不了 `taskkill` / `schtasks`，
-      换掉那个跑着旧代码的常驻实例要由使用者来做
+- [x] **实机验证 `--elevate` ② 开机静默** —— 2026-10-10 注销重登通过：
+      任务以管理员拉起新实例，**没有弹 UAC**。`LogonTrigger` 与 `PT0S` 都如预期生效
+- [x] **实机验证：管理员常驻时，普通权限命令行能连上管道** —— 2026-10-10 17:50 通过：
+      普通权限的 PowerShell 跑 `--reload`，日志出现 `收到 IPC 命令：reload`、
+      命令正常返回。`MediumLabelPipe` 的降标签确实让 High 服务端放行了 Medium 客户端
 - [ ] 在真实 StarPie 1.8.0 主程序里加载插件（当前只有离线宿主桩的验证）

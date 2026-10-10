@@ -160,12 +160,12 @@ internal sealed class App : Application
                         ApplyAutoStart();
                     })
                     .Task;
-                return new IpcResponse { Ok = true };
+                return IpcResponse.Done($"已重新加载配置：{AppPaths.ConfigPath}");
             }
 
             case IpcActions.Quit:
                 _ = Dispatcher.BeginInvoke((Action)(() => Shutdown()));
-                return new IpcResponse { Ok = true };
+                return IpcResponse.Done("常驻实例正在退出");
 
             case IpcActions.Capture:
             {
