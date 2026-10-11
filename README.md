@@ -83,6 +83,16 @@ PrismShot 走的是另一条路：**WGC（Windows.Graphics.Capture）取 `R16G16
 - 可配置的**录像宏按钮**：一键向 NVIDIA / AMD / Xbox 录屏发启停热键。
   预设三个：`Alt+F9`（NVIDIA）、`Ctrl+Shift+R`（AMD）、`Win+Alt+R`（Xbox Game Bar），
   也可以改成「启动某个程序」—— 给没有全局热键的录屏方案用
+- 点录制时会**先把遮罩收掉再发组合键**（否则第一帧里录的是自己的蒙版），
+  并发一张小卡片说明「已发送 Alt+F9」/「刚发过，稍等」/「对面这项功能看着是关的」
+
+> **点了「录制」没反应，多半是预设对错了软件。**
+> 宏的本质是替你按一个组合键，而**各家软件的热键互不相同**：
+> 默认是 Xbox Game Bar 的 `Win+Alt+R`，但你机器上真正在录的可能是 NVIDIA 的 `Alt+F9`。
+> 键发出去了、对方压根没注册这个热键，于是界面上看起来就是"什么都没发生"。
+> 把鼠标停在「录制」按钮上，提示里写的是**这一台机器真正会按下的那个键**；
+> 不对就改 `settings.json` 的 `Recorder.Preset`（`nvidia` / `amd` / `xbox` / `custom`）
+> 或 `Recorder.LaunchPath`（直接启动录像程序），改完 `--reload`。
 
 ## 配置（settings.json）
 

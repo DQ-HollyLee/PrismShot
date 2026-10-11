@@ -54,6 +54,7 @@
         </Border.RenderTransform>
         <StackPanel Orientation="Horizontal">
             <Border
+                x:Name="ThumbBorder"
                 Width="96"
                 Height="60"
                 Margin="0,0,10,0"

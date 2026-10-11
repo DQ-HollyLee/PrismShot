@@ -152,7 +152,7 @@
                         Click="OnRecordClick"
                         Content="录制"
                         Style="{StaticResource AccentToolButton}"
-                        ToolTip="向显卡驱动发送录屏组合键" />
+                        ToolTip="发送录屏组合键" />
                     <Button
                         x:Name="CloseButton"
                         Click="OnCloseClick"

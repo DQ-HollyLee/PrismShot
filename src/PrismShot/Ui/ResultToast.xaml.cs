@@ -30,15 +30,39 @@ internal sealed partial class ResultToast : Window
     private DateTime _opened;
 
     public ResultToast(Raster thumbnail, string title, string? targetPath, int seconds)
+        : this(thumbnail, title, HintOf(targetPath), targetPath, seconds) { }
+
+    /// <summary>
+    /// 没有缩略图的纯文字提示。给「不是截图」的动作用 ——
+    /// 录屏宏发了就是发了，没有图片可贴，但要让人知道它确实发了。
+    /// </summary>
+    public static ResultToast Notice(string title, string hint, int seconds) =>
+        new(null, title, hint, null, seconds);
+
+    private ResultToast(
+        Raster? thumbnail,
+        string title,
+        string hint,
+        string? targetPath,
+        int seconds
+    )
     {
         InitializeComponent();
 
         _targetPath = targetPath;
-        Thumb.Source = Downscale(thumbnail);
+
+        if (thumbnail is null)
+        {
+            // 空留一个 96×60 的透明格子只会把文字挤到右边去。
+            ThumbBorder.Visibility = Visibility.Collapsed;
+        }
+        else
+        {
+            Thumb.Source = Downscale(thumbnail);
+        }
+
         TitleText.Text = title;
-        HintText.Text = string.IsNullOrEmpty(targetPath)
-            ? "已在剪贴板中"
-            : "点击打开所在位置";
+        HintText.Text = hint;
 
         PositionAtPrimaryBottomRight();
 
@@ -50,6 +74,9 @@ internal sealed partial class ResultToast : Window
         Loaded += (_, _) => _timer.Start();
         Closed += (_, _) => _timer.Stop();
     }
+
+    private static string HintOf(string? targetPath) =>
+        string.IsNullOrEmpty(targetPath) ? "已在剪贴板中" : "点击打开所在位置";
 
     private int LifetimeSeconds { get; }
 

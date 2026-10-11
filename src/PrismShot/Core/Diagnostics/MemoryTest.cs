@@ -191,7 +191,8 @@ internal static class MemoryTest
             state,
             new List<WindowCandidate>(),
             runsToolbar: true,
-            magnifierEnabled: true
+            magnifierEnabled: true,
+            recorderHint: "发送录屏组合键（内存测试不真发）"
         );
 
         if (mode == SelectionMode.Freeform)

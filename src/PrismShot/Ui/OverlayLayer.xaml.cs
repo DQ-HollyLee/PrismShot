@@ -53,7 +53,8 @@ internal sealed partial class OverlayLayer : Window
         SelectionState state,
         List<WindowCandidate> windows,
         bool runsToolbar,
-        bool magnifierEnabled
+        bool magnifierEnabled,
+        string recorderHint
     )
     {
         _target = target;
@@ -63,6 +64,14 @@ internal sealed partial class OverlayLayer : Window
         _magnifierEnabled = magnifierEnabled;
 
         InitializeComponent();
+
+        // 按钮提示写死"向显卡驱动发送录屏组合键"是句没用的话：
+        // 各家热键不同（Alt+F9 / Ctrl+Shift+R / Win+Alt+R），按钮到底会按哪家的门铃，
+        // 只有配置说了算。把它说出来，用户至少能一眼看出「哦，是我没配」。
+        if (runsToolbar)
+        {
+            RecordButton.ToolTip = recorderHint;
+        }
 
         InitializeFrame(frozenFrame);
         SourceInitialized += OnSourceInitialized;

@@ -68,13 +68,17 @@ internal sealed class OverlayHost
             // 否则用户会看到一张没有工具栏的蒙版，无从下手。
             bool toolbarHere = capture.Target.IsPrimary || index == 0;
 
+            // 按钮上写的是这一台机器真正会按下的那个组合键，而不是一句笼统的说明。
+            string recorderHint = RecorderMacro.Describe(_settings);
+
             OverlayLayer layer = new(
                 capture.Target,
                 capture.Image.ToBitmapSource(),
                 state,
                 windows,
                 toolbarHere,
-                _settings.Behavior.OverlayMagnifier
+                _settings.Behavior.OverlayMagnifier,
+                recorderHint
             );
 
             layer.Completed += OnLayerCompleted;
@@ -105,7 +109,21 @@ internal sealed class OverlayHost
         return completion.Task;
     }
 
-    private void OnRecorderRequested(string source) => RecorderRequested?.Invoke();
+    /// <summary>
+    /// 用户点了覆盖层上的录屏按钮。
+    /// </summary>
+    /// <remarks>
+    /// 顺序是刻意的：<b>先把所有层收掉，再通知外面去发组合键</b>。
+    /// 蒙版是几张真的最上层窗口，录制一开始它们是会被录进去的 ——
+    /// 用户点「录制」的本意是「我要开始录了」，而不是「我要录一张蒙版」。
+    /// 于是这里先当本次截图取消结账（<see cref="OnLayerCompleted"/>），
+    /// 蒙版消失之后宏才动，Macro 那边的反馈文字由调用方显示。
+    /// </remarks>
+    private void OnRecorderRequested(string source)
+    {
+        OnLayerCompleted(OverlayResult.Cancelled());
+        RecorderRequested?.Invoke();
+    }
 
     private void OnLayerCompleted(OverlayResult result)
     {

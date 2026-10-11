@@ -247,7 +247,7 @@ internal sealed class CaptureSession : IDisposable
             (Action)(async () =>
             {
                 OverlayHost host = new(_settings);
-                host.RecorderRequested += () => RecorderMacro.Fire(_settings);
+                host.RecorderRequested += () => FireRecorderMacro();
                 try
                 {
                     OverlayResult picked = await host
@@ -268,6 +268,26 @@ internal sealed class CaptureSession : IDisposable
         );
 
         return bridge.Task;
+    }
+
+    /// <summary>
+    /// 录屏宏。发完之后必须把结果说回来 —— 宏只是往系统里塞一串合成按键，
+    /// 对面的录像软件接不接、录屏功能开没开，它自己一无所知。
+    /// 不吭声的结果在界面上就是「点了一下，什么都没发生」。
+    /// </summary>
+    private void FireRecorderMacro()
+    {
+        MacroOutcome outcome = RecorderMacro.Fire(_settings);
+
+        _ui.BeginInvoke(
+            (Action)(() =>
+            {
+                // 提示卡片自己会淡出，不需要谁去关它。
+                int seconds = outcome.Level == MacroLevel.Sent ? 3 : 6;
+                ResultToast toast = ResultToast.Notice(outcome.Title, outcome.Hint, seconds);
+                toast.Show();
+            })
+        );
     }
 
     private string? SaveToDisk(
