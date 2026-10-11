@@ -58,6 +58,21 @@ function Read-Version {
 
 # 通道（alpha / beta / stable）。不并进 $version 是因为版本号只该有数字，
 # 而文件名与「关于」里都得能一眼看出这是哪一条通道的产物。
+# 通道内第几次发布。它与 version / channel 一起决定 tag 与文件名：
+# v{version}-{channel}.{sequence}。
+#
+# 这个数字必须存在，是因为「改了东西但版本号没变」是会真实发生的：
+# beta.1 发布后又修了三处，当时偷懒直接替换了同一个 Release 的资产，
+# 于是同一个版本号下先后躺过三份不同的产物 —— 版本号从此不再是唯一真相。
+# 有了它，每一次发布都对应一个只增不减的编号，资产文件名也跟着变，想混都混不了。
+function Read-Sequence {
+    $file = Join-Path $root 'version.json'
+    $json = Get-Content $file -Raw | ConvertFrom-Json
+    if (-not $json.sequence) { throw "version.json 里没有 sequence 字段（通道内发布序号）。" }
+
+    return $json.sequence
+}
+
 function Read-Channel {
     $file = Join-Path $root 'version.json'
     $json = Get-Content $file -Raw | ConvertFrom-Json
@@ -152,7 +167,8 @@ Write-Host "dotnet: $dotnet" -ForegroundColor DarkGray
 
 $version = Read-Version
 $channel = Read-Channel
-Write-Host "版本: $version ($channel)" -ForegroundColor DarkGray
+$sequence = Read-Sequence
+Write-Host "版本: $version ($channel.$sequence)  tag: v$version-$channel.$sequence" -ForegroundColor DarkGray
 
 $appProject = Join-Path $root 'src/PrismShot/PrismShot.csproj'
 $pluginProject = Join-Path $root 'plugin/StarPie.Plugin.PrismShot/StarPie.Plugin.PrismShot.csproj'
@@ -268,7 +284,7 @@ if ($LASTEXITCODE -ne 0) { throw "安装程序 publish 失败（exit $LASTEXITCO
 $setupExe = Join-Path $setupStage 'PrismShot.Setup.exe'
 if (-not (Test-Path $setupExe)) { throw "publish 之后找不到 $setupExe。" }
 
-$setupFinal = Join-Path $root "artifacts/PrismShot-$version-$channel-Setup.exe"
+$setupFinal = Join-Path $root "artifacts/PrismShot-$version-$channel.$sequence-Setup.exe"
 if (Test-Path $setupFinal) { [System.IO.File]::Delete($setupFinal) }
 Copy-Item $setupExe $setupFinal -Force
 $sizeMb = [math]::Round((Get-Item $setupFinal).Length / 1MB, 1)

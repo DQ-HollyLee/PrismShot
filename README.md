@@ -2,7 +2,7 @@
 
 一个「像 Windows 自带截图工具一样不存在，但能在 HDR 屏上截出正确颜色」的 Windows 截图工具。
 
-**仓库**：https://github.com/DQ-HollyLee/PrismShot ｜ **下载最新版**：https://github.com/DQ-HollyLee/PrismShot/releases/latest
+**仓库**：https://github.com/DQ-HollyLee/PrismShot ｜ **下载**：https://github.com/DQ-HollyLee/PrismShot/releases/latest（当前 beta.2）
 
 MIT 协议。HDR 处理思路参考了 [Starshot](https://github.com/loliri/Starshot)（用 WGC 取浮点帧，
 而不是让 DWM 把 HDR 降级成 8bit SDR），低占用与可扩展的取向参考了
@@ -188,7 +188,7 @@ PrismShot.exe --version
 四个截图动作 + 一个「截图识字」。安装与参数说明见
 [plugin/StarPie.Plugin.PrismShot/README.md](plugin/StarPie.Plugin.PrismShot/README.md)。
 
-不想自己编译就取 Release 里的 `StarPie.Plugin.PrismShot-<版本>.zip`（约 42 KB，里面就是
+不想自己编译就取 Release 里的 `StarPie.Plugin.PrismShot-<版本>.zip`（约 48 KB，里面就是
 `StarPie.Plugin.PrismShot.dll` + `plugin.json`）：
 https://github.com/DQ-HollyLee/PrismShot/releases/latest
 解压到 `%LOCALAPPDATA%\StarPie\plugin-data\` 下任意一个子目录，重启 StarPie 即可。

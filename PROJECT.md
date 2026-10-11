@@ -99,6 +99,40 @@ hdrshot-screenshot/
 4. `version.json` 与 `CHANGELOG.md` 必须与最新 tag 一致。
 5. 任何**破坏性重构**之前先打个 `pre-refactor-XXX` tag，方便回退。
 6. 不做 `--force` 推送，不做改写历史的 rebase。
+7. **发布过的 Release 资产不可变 —— 要改就发新版本号。**（见下）
+
+### 版本号怎么算
+
+`version.json` 是唯一真相，三个字段一起决定这次发布的身份：
+
+```
+tag       = v{version}-{channel}.{sequence}     例：v0.1.0-beta.2
+发行包    = PrismShot-{version}-{channel}.{sequence}.zip
+安装程序  = PrismShot-{version}-{channel}.{sequence}-Setup.exe
+插件包    = StarPie.Plugin.PrismShot-{version}-{channel}.{sequence}.zip
+```
+
+文件名一律由脚本从 `version.json` 拼出来，**不许手写**。
+
+### 为什么第 7 条是硬的（踩过一次）
+
+beta.1 发布之后又修了三处（插件产物陈旧 / 识别结果窗口 / 录屏宏发错键），
+当时图省事直接**替换了同一个 Release 的下载文件**。后果：
+
+- 同一个版本号下先后躺过三份不同的产物，`beta.1` 到底是哪一份谁也说不清 ——
+  用户报告问题时，第一件事变成"你装的其实是哪一版"，而这个信息根本没有载体
+- 文件名也没跟着变，于是出现了「代码是 beta.2、zip 还写着 beta.1」的荒唐状态
+- 想回滚到"当时的那一版"已经不可能：那份产物早被覆盖了
+
+发一个新版本号的成本是「改一个数字 + 重传三个文件」，几分钟；
+就地替换省下这几分钟，换来的是版本号这个东西从此不可信。**版本号必须能回答"我装的什么"。**
+
+于是：
+
+- `sequence` 只增不减，每次发布 +1
+- Release 一旦发布，资产就不再改动；有修复就发下一个序号
+- 万一某个版本必须下架（像 beta.1 那样），删掉资产、在说明里写清为什么和去哪儿下，
+  **不要悄悄换成别的内容**
 
 ## 数据流（主路径）
 
